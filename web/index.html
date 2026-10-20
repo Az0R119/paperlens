@@ -1,0 +1,2573 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>paperlens · 论文解析看板</title>
+<link rel="stylesheet" href="p3r.css?v=de44dc94">
+<style>
+/* ---- 页面骨架（设计令牌全在 p3r.css 里） ---- */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  /* ★ 只留布局兜底，**不重写 color / background** ——
+     内联 <style> 在 p3r.css 之后生效、优先级更高，之前这里写了
+     `color:var(--ink); background:var(--bg-grad)`，而 --bg-grad 这个变量
+     在 p3r.css 里根本不存在 → background 整条无效 → 白底 + 深色字，
+     整个 P3R 风格被这两行抹掉（实测 body 计算值 backgroundImage=none、
+     color=rgb(11,16,32)）。配色统一由 p3r.css 的 :root 变量管。 */
+  min-height:100vh;
+}
+/* ★ 扫描线只保留 p3r.css 里那一条（body::after）。
+   这里原来还有一条 body::before，**周期和 p3r.css 的完全一样**（1px 亮 / 2px 暗），
+   两层叠加后对比度被放大成肉眼可见的横带 —— 在满屏蓝色渐变上就是一条刺眼的
+   密条纹带（用户截图实测）。删掉重复的这层，CRT 质感由 p3r.css 那条负责。 */
+
+.wrap{position:relative; z-index:1; max-width:1080px; margin:0 auto; padding:var(--sp-6) var(--sp-5) 96px}
+
+/* ---- 顶栏 ---- */
+.topbar{display:flex; align-items:center; gap:var(--sp-4); margin-bottom:var(--sp-6)}
+.topbar .logo{font-family:var(--font-en); font-weight:900; font-style:italic;
+  font-size:40px; letter-spacing:-.02em; color:#fff; text-transform:lowercase;
+  text-shadow:var(--hard-shadow-sm)}
+.topbar .tagline{font-size:13px; color:var(--cyan-2); letter-spacing:.14em; text-transform:uppercase; font-weight:700}
+
+/* ---- 拖入区：P3R 的正圆 ---- */
+.dropzone{
+  width:340px; height:340px; margin:var(--sp-6) auto; position:relative;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  border:3px dashed rgba(255,255,255,.85); border-radius:50%;
+  background:rgba(255,255,255,.07); cursor:pointer;
+  transition:transform .22s var(--ease), background .22s var(--ease), border-color .22s var(--ease);
+}
+.dropzone:hover,.dropzone.over{
+  transform:scale(1.05) rotate(-1.2deg); background:rgba(255,255,255,.15);
+  border-color:var(--cyan-3);
+}
+.dropzone .big{font-family:var(--font-en); font-weight:900; font-style:italic;
+  font-size:30px; color:#fff; text-transform:uppercase; letter-spacing:.01em; text-align:center; line-height:1.1}
+.dropzone .sub{margin-top:var(--sp-2); font-size:13px; color:var(--cyan-2); text-align:center; padding:0 var(--sp-5); line-height:1.5}
+.dropzone .arr{font-size:44px; color:var(--cyan-3); margin-bottom:var(--sp-2)}
+/* 手机上别写"拖" —— 手指拖不了文件。触摸设备只显示"点这里" */
+
+
+.user-hint{margin-top:var(--sp-5); text-align:center; font-size:12.5px; color:rgba(255,255,255,.7); line-height:1.7}
+.user-hint b{color:var(--cyan-3)}
+
+/* ── 首屏「凭什么用这个」── P3R 风格：标签号 + 超粗斜字 + 硬边投影 ── */
+.whybetter{margin-top:var(--sp-5); text-align:left}
+.wb-hd{display:flex; align-items:baseline; gap:12px; margin-bottom:16px;
+  padding-bottom:10px; border-bottom:2px solid rgba(255,255,255,.16)}
+.wb-hd .wb-num{font-family:var(--font-display); font-weight:900; font-style:italic;
+  font-variation-settings:"wdth" 75; font-size:40px; line-height:.9;
+  color:var(--cyan-2); text-shadow:3px 3px 0 rgba(3,16,54,.55)}
+.wb-hd .wb-txt{font-size:14px; font-weight:900; letter-spacing:.06em; color:rgba(255,255,255,.86)}
+
+.wb-list{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+@media (max-width:820px){ .wb-list{grid-template-columns:1fr} }
+
+.wb{position:relative; padding:16px 18px 15px; text-align:left;
+  background:rgba(6,14,38,.42); border:2px solid rgba(255,255,255,.18);
+  box-shadow:4px 4px 0 rgba(3,16,54,.45);
+  /* P3R 的四角不齐 */
+  clip-path:polygon(.8% 0%,100% 1.2%,99.2% 100%,0% 98.8%)}
+.wb-t{font-size:15px; font-weight:900; color:#fff; line-height:1.4;
+  display:flex; align-items:baseline; gap:9px; flex-wrap:wrap}
+.wb-t b{font-family:var(--font-display); font-style:italic; font-weight:900;
+  font-variation-settings:"wdth" 75; font-size:19px; color:var(--bg-dark, #031036);
+  background:var(--cyan-2); padding:1px 7px; line-height:1.15;
+  box-shadow:2px 2px 0 rgba(0,0,0,.35)}
+.wb-t em{display:block; width:100%; font-style:normal; font-size:12px;
+  font-weight:700; color:var(--cyan-3); opacity:.95; letter-spacing:.01em}
+.wb-d{margin-top:9px; font-size:12.5px; line-height:1.72; color:rgba(255,255,255,.76)}
+.wb-d b{color:#fff; font-weight:900}
+.wb-d code{font-size:11.5px; padding:1px 5px; border-radius:3px;
+  background:rgba(125,230,253,.16); color:var(--cyan-1)}
+.qs{display:block; margin-top:6px; font-size:11.5px; line-height:1.6;
+  color:rgba(160,255,180,.85)}
+.wb-note{margin-top:12px; padding:10px 14px; font-size:12.5px; line-height:1.7;
+  color:rgba(255,255,255,.78);
+  background:rgba(22,207,251,.10); border-left:3px solid var(--cyan-2)}
+.wb-note b{color:#fff}
+
+/* ── exe 下载条：一块「按得下去」的整条，不做成小链接 ── */
+.dlbox{display:flex; align-items:center; gap:16px; margin-top:22px; padding:15px 20px;
+  text-decoration:none; color:inherit; text-align:left;
+  background:linear-gradient(90deg, rgba(22,207,251,.20), rgba(22,207,251,.05));
+  border:2px solid rgba(125,230,253,.55);
+  box-shadow:5px 5px 0 rgba(3,16,54,.5);
+  clip-path:polygon(0% .8%,99.4% 0%,100% 99%,.6% 100%);
+  transition:transform .12s, box-shadow .12s}
+.dlbox:hover{transform:translate(-2px,-2px); box-shadow:7px 7px 0 rgba(3,16,54,.55)}
+.dl-ico{font-family:var(--font-display); font-weight:900; font-style:italic;
+  font-size:30px; line-height:1; color:var(--cyan-2); flex:none;
+  text-shadow:2px 2px 0 rgba(3,16,54,.6)}
+.dl-main{flex:1 1 auto; min-width:0}
+.dl-t{font-size:15px; font-weight:900; color:#fff; letter-spacing:.01em}
+.dl-d{font-size:12px; margin-top:3px; color:rgba(255,255,255,.7)}
+.dl-go{font-size:12.5px; font-weight:900; color:var(--cyan-1); flex:none; white-space:nowrap}
+
+/* ── 两个客户端下载入口（Windows / 安卓 分开摆，用户自己点）── */
+.dlbox2{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:22px; text-align:left}
+.dl-a{display:flex; align-items:center; gap:12px; padding:13px 16px;
+  text-decoration:none; color:inherit;
+  background:linear-gradient(90deg, rgba(22,207,251,.20), rgba(22,207,251,.05));
+  border:2px solid rgba(125,230,253,.55);
+  box-shadow:5px 5px 0 rgba(3,16,54,.5);
+  clip-path:polygon(0% .8%,99.4% 0%,100% 99%,.6% 100%);
+  transition:transform .12s, box-shadow .12s}
+.dl-a:hover{transform:translate(-2px,-2px); box-shadow:7px 7px 0 rgba(3,16,54,.55)}
+.dl-a--and{background:linear-gradient(90deg, rgba(140,255,160,.18), rgba(140,255,160,.04));
+  border-color:rgba(160,255,180,.5)}
+.dl-os{font-size:26px; line-height:1; flex:none; filter:drop-shadow(2px 2px 0 rgba(3,16,54,.5))}
+.dl-main{flex:1 1 auto; min-width:0}
+.dl-t{font-size:14.5px; font-weight:900; color:#fff; letter-spacing:.01em}
+.dl-d{font-size:11.5px; margin-top:3px; color:rgba(255,255,255,.7); line-height:1.45}
+.dl-go{font-size:12.5px; font-weight:900; color:var(--cyan-1); flex:none; white-space:nowrap}
+.dl-a--and .dl-go{color:#a8ffbc}
+.dl-hint{font-size:11.5px; color:rgba(255,255,255,.55); margin-top:9px; line-height:1.6}
+/* 屏幕放不下并排两个时竖着排 —— 不竖排会挤成 405px 高的长条 */
+.dlbox2{grid-template-columns:repeat(auto-fit, minmax(240px, 1fr))}
+
+
+.limits{margin-top:14px; font-size:11.5px; line-height:1.75; text-align:left;
+  color:rgba(255,255,255,.5); max-width:640px}
+.limits b{color:rgba(255,255,255,.72)}
+.pwmask{position:fixed; inset:0; z-index:9999; display:flex; align-items:center;
+  justify-content:center; background:rgba(3,10,28,.82); backdrop-filter:blur(3px)}
+.pwbox{width:min(90vw,380px); padding:22px 24px; text-align:left;
+  background:linear-gradient(160deg, #0d1d3f, #071228);
+  border:2px solid var(--cyan-2); box-shadow:8px 8px 0 rgba(3,16,54,.6)}
+.pw-t{font-size:17px; font-weight:900; color:#fff; margin-bottom:8px}
+.pw-d{font-size:12.5px; line-height:1.7; color:rgba(255,255,255,.72); margin-bottom:14px}
+.pwbox input{width:100%; box-sizing:border-box; padding:10px 12px; font-size:14px;
+  color:#fff; background:rgba(255,255,255,.06); border:1px solid rgba(125,230,253,.4);
+  outline:none}
+.pwbox input:focus{border-color:var(--cyan-1)}
+.pw-btns{display:flex; gap:10px; margin-top:14px}
+.pw-btns button{flex:1; min-height:40px; font-size:13.5px; font-weight:900; cursor:pointer;
+  border:none; font-family:inherit}
+#pwCancel{background:rgba(255,255,255,.1); color:rgba(255,255,255,.8)}
+#pwOk{background:var(--cyan-1); color:#06121a}
+.pw-err{margin-top:10px; font-size:12px; color:#ff8080; min-height:16px}
+.pw-lb{display:block; margin:12px 0 5px; font-size:12px; font-weight:900;
+  color:rgba(255,255,255,.8)}
+.pwbox select{width:100%; box-sizing:border-box; padding:9px 10px; font-size:13.5px;
+  color:#fff; background:rgba(255,255,255,.06); border:1px solid rgba(125,230,253,.4);
+  outline:none; font-family:inherit}
+.pw-row{margin-bottom:4px}
+.pw-help{margin-top:6px; font-size:11.5px; line-height:1.6; color:rgba(160,255,180,.8)}
+.tr-cfg{color:var(--cyan-1); font-weight:900; text-decoration:underline;
+  text-underline-offset:2px}
+.zhk.filled{color:var(--cyan-1)}
+.zhk.failed{color:#ff8080; opacity:.8}
+
+/* ── 桌面版专属工具（只有 exe 显示）── */
+.dtools{margin-top:24px; text-align:left}
+.dt-hd{display:flex; align-items:baseline; gap:10px; margin-bottom:12px;
+  padding-bottom:8px; border-bottom:2px solid rgba(255,255,255,.14)}
+.dt-hd .dt-num{font-family:var(--font-display); font-weight:900; font-style:italic;
+  font-variation-settings:"wdth" 75; font-size:15px; letter-spacing:.06em;
+  color:var(--bg-dark,#031036); background:var(--cyan-2); padding:2px 9px;
+  box-shadow:2px 2px 0 rgba(0,0,0,.35)}
+.dt-hd .dt-txt{font-size:13.5px; font-weight:900; color:rgba(255,255,255,.86)}
+.dt-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:10px}
+@media (max-width:860px){ .dt-grid{grid-template-columns:repeat(2,1fr)} }
+.dt{text-align:left; cursor:pointer; font:inherit; color:#fff;
+  display:flex; flex-direction:column; gap:4px; padding:12px 13px;
+  background:rgba(6,14,38,.42); border:2px solid rgba(255,255,255,.18);
+  box-shadow:3px 3px 0 rgba(3,16,54,.45);
+  clip-path:polygon(.8% 0%,100% 1.4%,99.3% 100%,0% 98.6%);
+  transition:transform .12s, box-shadow .12s}
+.dt:hover{transform:translate(-2px,-2px); box-shadow:5px 5px 0 rgba(3,16,54,.55)}
+.dt:disabled{opacity:.45; cursor:default; transform:none}
+.dt b{font-size:16px; line-height:1}
+.dt span{font-size:12.5px; font-weight:900}
+.dt i{font-size:10.5px; font-style:normal; line-height:1.45; color:rgba(255,255,255,.6)}
+.dt-log{margin-top:10px; font-size:12px; line-height:1.7; color:rgba(255,255,255,.72);
+  white-space:pre-wrap; max-height:170px; overflow:auto}
+.dt-log:empty{display:none}
+
+
+/* ---- 进度 ---- */
+.progress{margin:var(--sp-5) auto; max-width:560px; display:none}
+.progress.on{display:block}
+.progress .bar{height:14px; background:rgba(0,0,0,.3); position:relative;
+  clip-path:polygon(0 12%, 100% 0, 99.4% 88%, .6% 100%)}
+.progress .bar i{display:block; height:100%; width:0%; background:var(--cyan-1);
+  transition:width .3s var(--ease)}
+.progress .msg{margin-top:var(--sp-2); font-size:13px; color:var(--cyan-2);
+  font-family:var(--font-en); font-weight:700; letter-spacing:.05em}
+
+/* ---- 看板 ---- */
+#board{display:none}
+#board.on{display:block}
+.paper-title{
+  font-family:var(--font-en); font-weight:900; font-style:italic;
+  font-size:clamp(28px,4.4vw,46px); line-height:1.06; color:#fff;
+  text-transform:none; letter-spacing:-.01em; margin:var(--sp-4) 0 var(--sp-3);
+  text-shadow:var(--hard-shadow);
+}
+.metaline{display:flex; flex-wrap:wrap; gap:var(--sp-2) var(--sp-3); margin-bottom:var(--sp-5)}
+.metaline span{
+  font-size:12.5px; font-weight:700; color:var(--ink);
+  background:var(--paper); padding:3px 11px;
+  clip-path:polygon(3% 8%, 100% 0, 97% 92%, 0 100%);
+}
+
+.pcard{
+  background:var(--paper); color:var(--ink); position:relative;
+  padding:var(--sp-5) var(--sp-5) var(--sp-4);
+  /* 间距 22px：44px 的缝在满屏蓝底上露出大块背景，远看像一条亮蓝带。 */
+  margin:0 0 22px;
+  /* ★ 斜切已归零、投影收小。
+     原样式抄 P3R 的"硬边错位"（clip-path 四角错位 + 7px 投影）——
+     那是给**游戏里的短条目**用的，偏移看着利落；看板卡片很高很长，
+     7px 投影会明显压住卡片右下角（用户实测："长投影叠压在标题文字右下方，
+     部分笔画被压住"），斜切则像"卡片被斜着削了一刀"。
+     保留 P3R 的黑白硬边对比，但改成规整矩形 + 2px 实投影：
+     既有纸片层次，又不吃掉任何文字。 */
+  border:1px solid rgba(3,16,54,.5);
+  box-shadow:2px 2px 0 rgba(3,16,54,.5);
+}
+/* 目录：每条挂摘要 + 可展开全节 */
+.tree .ofull{margin:2px 0 8px 10px; font-size:12.5px}
+.tree .ofull summary{cursor:pointer; color:var(--cyan-1); opacity:.85; font-weight:700;
+  list-style:none; display:inline-block; padding:1px 6px; border-radius:2px}
+.tree .ofull summary:hover{opacity:1; background:rgba(22,207,251,.12)}
+.tree .ofull summary::-webkit-details-marker{display:none}
+.tree .ofull summary::before{content:'▸ '}
+.tree .ofull[open] summary::before{content:'▾ '}
+.tree .ofulltxt{margin-top:6px; padding:8px 10px; max-height:340px; overflow:auto;
+  background:rgba(3,31,100,.045); border-left:2px solid rgba(22,207,251,.5);
+  line-height:1.65; opacity:.78; white-space:pre-wrap}
+/* 目录：每条挂一句摘要 */
+.tree .ot{font-weight:700}
+.tree .osum{font-size:12.5px; line-height:1.55; opacity:.62; margin:1px 0 6px 0;
+  padding-left:10px; border-left:2px solid var(--paper-dim, rgba(3,31,100,.16))}
+/* 引文条目文字 */
+.refttl{font-size:12px; opacity:.55; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  flex:1 1 auto; min-width:0}
+/* 引文可点 */
+/* ★ 链接必须一眼看出是链接 —— 用户反馈"我还是没看到超链接"，
+   因为旧样式是浅青色小字 + 虚线下划线，在白色卡片上几乎看不出可点。
+   改成：实底浅色底纹 + 实线下划线 + 加粗，鼠标移上去变红。
+   （纯算法看板里链接不多，做显眼一点不影响观感。） */
+.refno.linked{color:#0a3a8c; text-decoration:underline; text-decoration-thickness:2px;
+  text-underline-offset:2px; background:rgba(22,207,251,.18); padding:1px 5px;
+  font-weight:800; border-radius:2px; display:inline-block; transition:all .12s; cursor:pointer}
+.refno.linked:hover{background:var(--red); color:#fff; text-decoration-color:#fff}
+.refno.linked.search{background:rgba(253,119,217,.16)}
+/* 板块内小标题 */
+.pbody .sub{font-weight:800; font-size:12.5px; opacity:.7; margin:8px 0 2px}
+/* 贡献句列表 */
+.contriblist li{margin-bottom:6px; line-height:1.6}
+/* 修辞角色小标签（词表学出来的） */
+.rolechip{font-size:11px; font-weight:800; padding:2px 8px; color:#032; background:var(--cyan-3);
+  clip-path:polygon(4% 8%,100% 0,96% 92%,0 100%); display:inline-block}
+/* 作者行（抄 science-parse 的 Authors） */
+.metaline.authors{align-items:center}
+.metaline.authors .lbl{font-weight:800; opacity:.75}
+/* 引用条 */
+.refrow{display:flex; align-items:center; gap:var(--sp-2); margin:3px 0}
+.refno{font-family:var(--font-en); font-weight:800; min-width:44px; opacity:.85; font-size:.86em}
+.refbar{height:11px; background:var(--cyan-1); clip-path:polygon(1% 8%,100% 0,99% 92%,0 100%); flex:0 1 auto}
+.refcnt{font-size:.8em; opacity:.6; font-family:var(--font-en)}
+
+.pcard > h2{
+  font-family:var(--font-en); font-weight:900; font-style:italic;
+  font-size:23px; letter-spacing:-.01em; color:var(--ink);
+  margin:0 0 var(--sp-3); display:flex; align-items:center; gap:10px;
+}
+.pcard > h2 .n{                     /* 板块序号：红色方块 */
+  font-size:14px; font-style:normal; background:var(--red); color:#fff;
+  padding:1px 8px; font-weight:900;
+  clip-path:polygon(8% 6%, 100% 0, 92% 94%, 0 100%);
+}
+.pcard p{margin:0 0 var(--sp-2); line-height:1.68}
+.pcard ul,.pcard ol{margin:0; padding-left:1.35em; line-height:1.7}
+.pcard li{margin-bottom:9px}
+.pcard li::marker{color:var(--red); font-weight:900}
+.why{font-size:12.5px; color:var(--muted); opacity:.86; line-height:1.6; margin-top:4px}
+.tag{display:inline-block; background:var(--red); color:#fff; font-size:11.5px; font-weight:900;
+  padding:1px 7px; margin-right:7px; font-style:italic;
+  clip-path:polygon(6% 12%, 100% 0, 94% 88%, 0 100%)}
+
+/* 目录树 */
+.tree{list-style:none; padding:0}
+.tree li{padding:3px 0; border-bottom:1px dotted rgba(0,0,0,.14)}
+.tree li:last-child{border-bottom:0}
+.tree .num{font-family:var(--font-en); font-weight:900; color:var(--red);
+  font-size:12px; margin-right:8px; font-style:italic}
+.tree .lv2{padding-left:18px}
+.tree .lv3{padding-left:36px; font-size:14px; opacity:.9}
+
+/* 表格 */
+table{width:100%; border-collapse:collapse; font-size:14px}
+th,td{text-align:left; padding:7px 9px; border-bottom:1px solid rgba(0,0,0,.12)}
+th{font-family:var(--font-en); font-weight:900; font-style:italic;
+   color:var(--red); font-size:12px; letter-spacing:.05em; text-transform:uppercase}
+
+/* 关键词 */
+.kw{display:flex; flex-wrap:wrap; gap:7px}
+.kw span{background:var(--ink); color:#fff; padding:3px 11px; font-size:13px; font-weight:700;
+  clip-path:polygon(4% 10%, 100% 0, 96% 90%, 0 100%)}
+.kw span i{font-style:normal; color:var(--cyan-3); font-size:11px; margin-left:5px}
+
+/* 篇幅分布条 */
+.dist{list-style:none; padding:0}
+.dist li{display:grid; grid-template-columns:1fr 54px; gap:10px; align-items:center;
+  padding:4px 0; border-bottom:0}
+.dist .lbl{font-size:13.5px}
+.dist .bar{height:9px; background:var(--cyan-1); margin-top:3px; display:block;
+  clip-path:polygon(0 15%, 100% 0, 99% 85%, 1% 100%)}
+.dist .pct{font-family:var(--font-en); font-weight:900; font-style:italic; font-size:13px; text-align:right}
+
+/* 图表清单 */
+.figs li{font-size:13.5px; line-height:1.55}
+
+/* 底部：重新开始 */
+.restart{margin:var(--sp-6) auto 0; display:block; text-align:center;
+  font-family:var(--font-en); font-weight:900; font-style:italic; font-size:15px;
+  color:#fff; background:var(--red); border:0; cursor:pointer;
+  padding:11px 34px; text-transform:uppercase; letter-spacing:.08em;
+  clip-path:polygon(3% 12%, 100% 0, 97% 88%, 0 100%);
+  transition:transform .18s var(--ease)}
+.restart:hover{transform:translate(-2px,-2px) rotate(-.8deg)}
+.err{background:var(--red); color:#fff; padding:var(--sp-3) var(--sp-4);
+  font-size:14px; clip-path:polygon(1% 10%, 100% 0, 99% 90%, 0 100%); display:none}
+.err.on{display:block}
+@media(max-width:620px){
+  .dropzone{width:min(84vw,300px); height:min(84vw,300px)}
+  .wrap{padding:var(--sp-5) var(--sp-4) 64px}
+}
+/* 英译中 */
+.trstat{font-size:12.5px; line-height:1.6; padding:6px 10px; margin-bottom:6px;
+  border-left:2px solid var(--paper-dim, rgba(3,31,100,.2)); opacity:.8}
+.trstat.ok{border-left-color:var(--cyan-1); opacity:1}
+.trstat.no{border-left-color:var(--red); opacity:1}
+/* 公网页面上翻译板块里的桌面版下载按钮 */
+.tr-dl{display:inline-block; margin:8px 0 4px; padding:8px 14px;
+  font-size:13px; font-weight:900; text-decoration:none; line-height:1.6;
+  min-height:44px; box-sizing:border-box;      /* 苹果建议的最小可点高度 */
+  color:#06121a; background:var(--cyan-1);
+  border-left:3px solid #fff; box-shadow:3px 3px 0 rgba(0,0,0,.4)}
+.tr-dl:hover{background:#fff}
+.tr-note{font-size:11.5px; opacity:.7}
+.trbtn{font:inherit; font-size:13px; font-weight:800; padding:7px 14px; cursor:pointer;
+  background:var(--ink); color:var(--paper); border:0; box-shadow:2px 2px 0 rgba(3,16,54,.5)}
+.trbtn:disabled{opacity:.4; cursor:default}
+.trbtn:not(:disabled):hover{transform:translate(-1px,-1px)}
+/* 一键复制工具条 —— 粘在页面顶部，跟着滚（长看板翻到一半也想复制） */
+.copybar{position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:8px;
+  flex-wrap:wrap; padding:10px 0 12px; margin-bottom:6px;
+  background:var(--bg, #0c0b10); border-bottom:1px solid rgba(255,255,255,.1)}
+.copybtn{flex:0 0 auto}
+.copyhint{font-size:12px; opacity:.5}
+/* 重点句下面的中文译文 —— 英文原句在上，中文在下，像对照读物 */
+.zhk{display:none; margin-top:5px; padding-left:9px; border-left:2px solid var(--cyan-1);
+  font-size:13px; line-height:1.66; opacity:.92}
+.zhk.on{display:block}
+/* 复制失败兜底框：自动复制不可用时，把文字全选摆出来让用户 Ctrl+C */
+.copyfallback{position:fixed; inset:0; z-index:200; display:flex; flex-direction:column;
+  gap:10px; padding:28px; background:rgba(6,8,20,.94)}
+.copyfallback .cfh{font-size:14px; line-height:1.6; color:#fff}
+.copyfallback textarea{flex:1 1 auto; width:100%; font:13px/1.6 ui-monospace,Consolas,monospace;
+  padding:12px; border-radius:6px; border:1px solid rgba(255,255,255,.25);
+  background:#11131f; color:#e8f0ff; resize:none}
+.copyfallback .trbtn{align-self:flex-start}
+.trrow{margin:7px 0; padding-left:10px; border-left:2px solid var(--cyan-1)}
+.trrow .en{font-size:12px; opacity:.55; line-height:1.5}
+.trrow .zh{font-size:13.5px; line-height:1.68; margin-top:2px}
+/* Mermaid 源码（断网时也能拿走） */
+.msrc{margin-top:9px}
+.msrc summary{cursor:pointer; font-size:12px; opacity:.6; list-style:none;
+  display:inline-block; padding:2px 8px; border-left:2px solid var(--cyan-1)}
+.msrc summary:hover{opacity:1}
+.msrc summary::-webkit-details-marker{display:none}
+.mtext{margin-top:6px; padding:9px 11px; font-size:11.5px; line-height:1.6;
+  font-family:var(--font-en); white-space:pre-wrap; overflow:auto; max-height:260px;
+  background:rgba(3,31,100,.05); border-left:2px solid rgba(22,207,251,.5); opacity:.8}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="logo">paperlens</div>
+    <div class="tagline">论文解析看板 · 零 API · 纯本地</div>
+  </div>
+
+  <!-- 拖入区 -->
+  <div id="drop" class="dropzone" role="button" tabindex="0">
+    <div class="arr">▲</div>
+    <div class="big">拖论文进来</div>
+    <div class="sub">或点击选择 PDF<br>全程在本机浏览器里算，不上传任何数据</div>
+  </div>
+  <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+
+  <div class="user-hint">
+    解析 <b>文本提取 · 章节结构 · 核心句 · 论证链 · Mermaid 导图 · 交互看板</b><br>
+    零 API 调用 · 零后端 · 零配置 · 断网可用
+  </div>
+
+  <div class="limits">
+    <b>能处理什么：</b>PDF 文件（.pdf）· 有文字层的直接读，<b>纯图片扫描件自动走 OCR</b> ·
+    加密的需要输密码 · 网页版建议 ≤ 100 页 / ≤ 50 MB（更大的用桌面版）<br>
+    <b>不能处理：</b>Word / Excel / PPT / 图片 / CAJ —— 请先另存为 PDF
+  </div>
+
+  <!-- ★ 首屏「凭什么用这个」——第一次打开的人三秒内要知道优势在哪。
+       只写能拿实测数据撑住的，不吹。 -->
+  <!-- ★ exe 下载入口。放在首屏，不让人去找。 -->
+  <!-- ★ 两个客户端分开摆，让用户自己点。
+       不做 UA 自动跳转：iOS 用户会被送到装不了的安卓包，台式机用户也常开热点/平板混淆。
+       宁可多点一下，也不送错。 -->
+  <div class="dlbox2" id="dlbox">
+    <a class="dl-a" href="https://github.com/Az0R119/paperlens/releases/latest/download/paperlens-desktop-v1.0.exe"
+       target="_blank" rel="noopener">
+      <div class="dl-os">🖥</div>
+      <div class="dl-main">
+        <div class="dl-t">Windows 桌面版</div>
+        <div class="dl-d">含 OCR / 批量 / 真文件路径 · 约 109 MB · 完全离线</div>
+      </div>
+      <div class="dl-go">下载 ↓</div>
+    </a>
+    <a class="dl-a dl-a--and" href="https://github.com/Az0R119/paperlens/releases/latest/download/paperlens-android-v1.0.apk"
+       target="_blank" rel="noopener">
+      <div class="dl-os">🤖</div>
+      <div class="dl-main">
+        <div class="dl-t">安卓手机版</div>
+        <div class="dl-d">APK 直接装 · 扫描件 OCR / 拍照 / 分享 / 存本地 · 约 50 MB</div>
+      </div>
+      <div class="dl-go">下载 ↓</div>
+    </a>
+  </div>
+  <div class="dl-hint">两个客户端都免安装包依赖、不要注册、不上传数据。iPhone 用户请直接用本页面。</div>
+
+  <div class="whybetter" id="whybetter">
+    <div class="wb-hd"><span class="wb-num">9</span><span class="wb-txt">件别家做不到或不愿做的事</span></div>
+    <div class="wb-list">
+
+      <div class="wb">
+        <div class="wb-t"><b>01</b> 数据真的不出本机 <em>不是「我们承诺」，是架构上做不到上传</em></div>
+        <div class="wb-d">
+          所有解析在浏览器里跑，<b>没有一个网络请求会带上你的 PDF</b>。
+          同类工具要么传服务器，要么要 API key；这个断网也能用。
+          翻译走本机 Ollama 模型，请求地址是 <code>127.0.0.1</code>，出门都出不去。
+        </div>
+      </div>
+
+      <div class="wb">
+        <div class="wb-t"><b>02</b> 零 API key、零配置 <em>开箱即用，不是「填个 key 就能用」</em></div>
+        <div class="wb-d">
+          不注册、不要 key、不装后端。拖进去就出 14 个板块。
+          翻译功能需要本机 Ollama，但<b>装不装都不影响其他 13 个板块</b>，
+          没装会明说「没装」，不会假装成功。
+        </div>
+      </div>
+
+      <div class="wb">
+        <div class="wb-t"><b>03</b> 中文 PDF 的版式问题专门处理过 <em>多数工具在这里翻车</em></div>
+        <div class="wb-d">
+          知网导出的 PDF（CNKI ReaderEx）常把左右栏塞进同一行、文字层是碎片。
+          这里先按坐标重排，再用「行跨度中位数 &lt; 页宽 8%」判断版式可不可信，
+          <b>不可信才转 OCR</b>——正常论文 1 秒出结果，不白等。
+          实测：arxiv 英文 1.1 秒 / 37874 字，中文期刊 0.3 秒 / 53045 字，
+          扫描件 37 秒 / 4416 字且数字全对。
+        </div>
+      </div>
+
+      <div class="wb">
+        <div class="wb-t"><b>04</b> 判定依据是实测出来的，不是拍脑袋 <em>每个判据都有精确率</em></div>
+        <div class="wb-d">
+          句子分类用的规则，精确率来自自家 <b>3611 篇论文 / 110510 句</b>的统计：
+          <code>however</code> 命中 4622 句精确率 100%、<code>we propose</code> 命中 4806 句 96%。
+          <b>带数字的句子零误伤</b>（13 条全部保留）。这些数字在 README 里可查。
+        </div>
+      </div>
+
+      <div class="wb">
+        <div class="wb-t"><b>05</b> 空文字层会自动转 OCR <em>别家在这一步就放弃</em></div>
+        <div class="wb-d">
+          很多工具判断「文字层好不好」只看字符有没有乱码，<b>整份是图片这种最坏情况反而算「正常」</b>，
+          最后报一句「抽不出文字」了事。这里把「一个字都没有」单独当成一条判据，
+          自动改读页面图片。<br>
+          <span class="qs">实测：WPS 导出的纯图 PDF（文字层 0 字符）→ 41 秒出 5 个板块、6018 字</span>
+        </div>
+      </div>
+
+      <div class="wb">
+        <div class="wb-t"><b>06</b> 英文 OCR 丢空格的问题专门修过 <em>这一步多数工具没做</em></div>
+        <div class="wb-d">
+          引擎读英文图片时常把词间空格丢掉，出来是
+          <code>TheAIerais&quot;precipitatingapivotal</code> —— 字都认对了，
+          <b>但切句、提核心句、翻译全废</b>。这里用英文词频表做二次切分，
+          并把 AI / API / LLM 这类缩写列为保护词不拆。
+        </div>
+      </div>
+
+      <div class="wb">
+        <div class="wb-t"><b>06.5</b> OCR 逐字准确，但空格偶尔还会出错 <em>这一条是自曝</em></div>
+        <div class="wb-d">
+          <b>词频表不是万能的。</b>实测一页英文扫描件，出来是这样几处：
+          <code>parallel iz able</code>（一个词被拆成三段）、
+          <code>task,improving</code>（逗号后缺空格）、
+          <code>thebest</code>（两词粘连）。<br>
+          <b>字都认对了，是空格没放对。</b>不影响看懂大意，
+          但<b>拿去引用原文时请对照 PDF 核对一遍</b>。<br>
+          <span style="opacity:.7">不藏这事，是因为知道边界在哪才算做过。</span>
+        </div>
+      </div>
+
+      <div class="wb">
+        <div class="wb-t"><b>07</b> 每一类错误都说清「你该做什么」</div>
+        <div class="wb-d">
+          不拿一句「图片型 PDF」搪塞所有情况。八种原因分别给话：
+          <b>OCR 认字太少</b>（分辨率低）· <b>语言包没下下来</b>（网络）·
+          <b>文件损坏</b>（重新导出）· <b>文件太大</b>（内存不够）·
+          <b>文字层只有零星几个字</b>（混合型 PDF）……
+          判断不出来时直接说「没判断出来」，并告诉你文件多大几页。
+        </div>
+      </div>
+
+      <div class="wb">
+        <div class="wb-t"><b>09</b> 翻译走本机模型：不填 key、不注册、断网也能用</div>
+        <div class="wb-d">
+          译文在这台电脑上算出来，<b>请求地址是 127.0.0.1，字都不出这台电脑</b>。<br>
+          没有账号、没有额度、没有月费，模型装一次就一直用。<br>
+          <span class="qs">实测：qwen2.5:3b 平均 6 秒一句，术语和数字都对；一篇论文约 30 分钟</span>
+        </div>
+      </div>
+
+      <div class="wb">
+        <div class="wb-t"><b>08</b> 加密 PDF 能输密码，不是一句英文报错</div>
+        <div class="wb-d">
+          有些工具遇到加密文件甩一句 <code>No password given</code> 就完了。
+          这里弹中文密码框，输错告诉你密码不对，输对直接出看板 ——
+          <b>密码只在本机用，不上传</b>。
+        </div>
+      </div>
+
+    </div>
+    <div class="wb-note">
+      <b>桌面版还多：</b>扫描件 OCR（网页里跑不动）· 整个文件夹批量转 txt ·
+      选文件拿真实路径 · 保存到指定位置 · <b>翻译走同源代理更稳</b>
+    </div>
+  </div>
+
+  <!-- ★ 桌面版专属工具：只有 exe 里才显示（靠 window.pywebview 判断）
+       网页版永远看不到这块 —— 因为这些活浏览器沙箱干不了：
+       读整个文件夹、拿真实文件路径、写文件到任意位置、本机 OCR。 -->
+  <div class="dtools" id="dtools" style="display:none">
+    <div class="dt-hd"><span class="dt-num">EXE</span><span class="dt-txt">桌面版专属 · 网页做不到的</span></div>
+    <div class="dt-grid">
+      <button class="dt" id="dtPick">
+        <b>📂</b><span>选文件（真实路径）</span><i>浏览器只能拿到沙箱路径，读不了原文件</i>
+      </button>
+      <button class="dt" id="dtBatch">
+        <b>📚</b><span>整个文件夹批量转换</span><i>一个文件夹里所有 PDF → 各自一个 txt</i>
+      </button>
+      <button class="dt" id="dtOcr">
+        <b>🔍</b><span>扫描件 OCR</span><i>本机引擎，网页版会卡死</i>
+      </button>
+      <button class="dt" id="dtSave">
+        <b>💾</b><span>导出当前看板为 txt</span><i>存到你指定位置</i>
+      </button>
+    </div>
+    <div class="dt-log" id="dtLog"></div>
+  </div>
+
+  <!-- ★ 手机版专属（只有 APK 里显示，靠 window.Capacitor 判断）
+       网页版没有：分享调系统分享面板、拍照调相机、文件关联靠 Android intent。 -->
+  <div class="dtools" id="mtools" style="display:none">
+    <div class="dt-hd"><span class="dt-num">APP</span><span class="dt-txt">手机版专属 · 网页做不到的</span></div>
+    <div class="dt-grid">
+      <button class="dt" id="mShare">
+        <b>📤</b><span>分享给别人</span><i>把看板内容发微信 / QQ / 邮件</i>
+      </button>
+      <button class="dt" id="mCam">
+        <b>📷</b><span>拍照识论文</span><i>拍纸质论文，直接出看板</i>
+      </button>
+      <button class="dt" id="mOcr">
+        <b>🔍</b><span>扫描件 OCR</span><i>整页是图片的 PDF，原生引擎读</i>
+      </button>
+      <button class="dt" id="mSave">
+        <b>💾</b><span>存到手机</span><i>导出 txt 到下载目录</i>
+      </button>
+    </div>
+    <div class="dt-log" id="mtLog"></div>
+  </div>
+
+  <div id="prog" class="progress">
+    <div class="bar"><i id="barfill"></i></div>
+    <div class="msg" id="pmsg">准备中…</div>
+  </div>
+
+  <div id="errbox" class="err"></div>
+  <div id="board"></div>
+  <button id="restart" class="restart" style="display:none">换一篇</button>
+</div>
+
+<script src="domain.js?v=1"></script>
+<script src="binary_bridge.js?v=1"></script>
+<script src="ocr.js?v=1"></script>
+<script src="local_ai.js?v=1"></script>
+
+<script src="core.js?v=e084616b"></script>
+<script type="module">
+// pdf.js 走 CDN（比赛题干鼓励用第三方库；品质优先）
+import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs';
+
+const $ = id => document.getElementById(id);
+const show = (el, on = true) => el.classList.toggle('on', on);
+// ★ 加密 PDF 的密码输入框。返回 Promise<string|null>（null = 用户取消）
+//   为什么要有：pdf.js 遇到加密文件抛 PasswordException("No password given")，
+//   原来这行英文直接甩给用户，而且没地方输密码 —— 等于这个文件打不开。
+function askPassword(fname) {
+  return new Promise(resolve => {
+    const box = document.createElement('div');
+    box.className = 'pwmask';
+    box.innerHTML =
+      '<div class="pwbox">' +
+        '<div class="pw-t">这份 PDF 加密了</div>' +
+        '<div class="pw-d">「' + (fname || '该文件').replace(/[<>&]/g, '') + '」需要密码才能打开。<br>' +
+        '密码只在本机使用，不会上传到任何地方。</div>' +
+        '<input type="password" id="pwInput" placeholder="输入 PDF 密码" autocomplete="off">' +
+        '<div class="pw-btns">' +
+          '<button id="pwCancel">取消</button>' +
+          '<button id="pwOk">打开</button>' +
+        '</div>' +
+        '<div class="pw-err" id="pwErr"></div>' +
+      '</div>';
+    document.body.appendChild(box);
+    const inp = box.querySelector('#pwInput');
+    const done = v => { box.remove(); resolve(v); };
+    box.querySelector('#pwOk').onclick = () => {
+      const v = inp.value.trim();
+      if (!v) { box.querySelector('#pwErr').textContent = '密码不能为空'; return; }
+      done(v);
+    };
+    box.querySelector('#pwCancel').onclick = () => done(null);
+    inp.onkeydown = e => {
+      if (e.key === 'Enter') box.querySelector('#pwOk').click();
+      if (e.key === 'Escape') done(null);
+    };
+    setTimeout(() => inp.focus(), 50);
+  });
+}
+
+// ★ 抽不出字时，按「真实原因」分八种情况给话。
+//   用户要的是「我该怎么办」，不是「可能是扫描件」。
+//   raw.ocr 是 extractText 带回来的 OCR 诊断信息（走过 OCR 才有）。
+function diagnoseNoText(file, raw, text) {
+  const len = (text || '').length;
+  const ocr = (raw && raw.ocr) || {};
+  const pages = (raw && raw.pages) || 0;
+  const mb = file && file.size ? file.size / 1048576 : 0;
+  const name = (file && file.name) || '这个文件';
+
+  // ① 走过 OCR 但 OCR 出的字仍然太少 → 图太糊 / 分辨率太低 / 扫描质量差
+  if (ocr.used && len < 400) {
+    return '「' + name + '」是纯图片 PDF，已经用 OCR 读过 ' + (ocr.pages || '?') +
+           ' 页，但只认出 ' + len + ' 个字。原因通常是扫描分辨率太低或图片太糊。\n\n' +
+           '可以试：① 用原版 PDF（不要截图后转的）；② 扫描时选 300dpi 以上；' +
+           '③ 拿桌面版试，桌面版的 OCR 引擎对低质量扫描件更稳。';
+  }
+
+  // ② OCR 明确失败（语言包没下下来 / 引擎报错）
+  if (ocr.note && /OCR 失败|ocr\.js 没加载|语言包/.test(ocr.note)) {
+    return '「' + name + '」是纯图片 PDF，需要 OCR 读图，但 OCR 引擎没启动成功：' +
+           ocr.note + '\n\n' +
+           '通常是网络问题（首次用要从 CDN 下载中文语言包，约 10 MB）。' +
+           '检查网络后刷新页面重试；或者直接用桌面版，OCR 引擎是内置的，不用下载。';
+  }
+
+  // ③ 一份 PDF 里一页都没有（文件本身有问题）
+  if (!pages) {
+    return '「' + name + '」打开后一页都没有 —— 文件可能不完整（下载中断）或已损坏。\n\n' +
+           '可以试：重新下载 / 重新导出一份；用别的阅读器打开看看正不正常。';
+  }
+
+  // ④ 文件特别大，浏览器内存吃紧，pdf.js 只读到了前几页
+  if (mb > 30) {
+    return '「' + name + '」有 ' + mb.toFixed(0) + ' MB，浏览器内存吃紧，可能只读了部分页面。\n\n' +
+           '建议用桌面版处理大文件（不受浏览器内存限制），或者先用 PDF 工具拆成几份。';
+  }
+
+  // ⑤ 文字层只有零星几个字 → 混合型：封面是图，正文有字，但整体抓不到
+  if (len > 0 && len < 400) {
+    return '「' + name + '」只提出 ' + len + ' 个字（不到 400）—— 这份 PDF 的文字层几乎是空的。\n\n' +
+           '常见于：① WPS/扫描仪导出的「图片 + 少量文字」混合 PDF；' +
+           '② 版权保护导出时删掉了文字层。' +
+           '这种情况需要 OCR，但网页版 OCR 没跑起来（可能被浏览器拦了）。' +
+           '换桌面版更稳。';
+  }
+
+  // ⑥ 一个字都没有，但也没走过 OCR → 文字层完全空（正常应该已触发 OCR，这里是兜底）
+  if (len === 0) {
+    return '「' + name + '」的文字层是空的（整份都是图片），而且 OCR 没能启动。\n\n' +
+           '先刷新页面重试一次；还不行就用桌面版 —— 它的 OCR 是本地引擎，不依赖网络。';
+  }
+
+  // ⑦ 有其他原因（extractText 里有 ocrInfo 但 used=false）
+  if (ocr.reason) {
+    return '「' + name + '」的文字层有问题（' + ocr.reason + '），OCR 也没能补救（' + (ocr.note || '原因不明') + '）。\n\n' +
+           '换个 PDF 试试；如果换了还不行，把这份文件留给我排查。';
+  }
+
+  // ⑧ 真的没线索了 —— 说清楚，不硬编一个理由
+  return '「' + name + '」提不出可用的文字（' + len + ' 个字符），具体原因没判断出来。\n\n' +
+         '能提供的信息：文件 ' + mb.toFixed(1) + ' MB，共 ' + (pages || '?') + ' 页。' +
+         '把这份 PDF 发我，我直接用它的字节排查。';
+}
+
+function fail(msg){
+  const e = $('errbox');
+  // ★ 诊断信息是多行的（原因 + 怎么办），textContent 会把换行压掉
+  e.style.whiteSpace = 'pre-wrap';
+  e.textContent = '✕ ' + msg;
+  show(e); show($('prog'), false);
+}
+function tick(p, m){ $('barfill').style.width = p+'%'; $('pmsg').textContent = m; }
+
+/* ---- 抽正文：逐页取文字 + 版式过滤（页眉页脚要同时看"重复"和"位置"）---- */
+async function extractText(file, onProgress, password){
+  const buf = await file.arrayBuffer();
+  // ★ cMapUrl/cMapPacked 是 pdf.js 处理**中文 CID 嵌入字体**的必需参数。
+  //   不配的话汉字**全部丢失**（实测《知识图谱》《CNN综述》两篇都只出来标点和
+  //   全角拉丁字母，汉字 0 个，切句从 67 掉到 6）；配上后汉字 1130 个/页。
+  // ★ password：加密 PDF 必须传，否则 pdf.js 抛英文 PasswordException
+  //   （用户实测报的是 "No password given"）。密码由外层弹框收集后传进来。
+  const opts = {
+    data: buf,
+    cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/cmaps/',
+    cMapPacked: true,
+    standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/standard_fonts/',
+  };
+  if (password) opts.password = password;
+  const doc = await pdfjsLib.getDocument(opts).promise;
+  const pages = [];
+  for (let i = 1; i <= doc.numPages; i++){
+    onProgress(i / doc.numPages);
+    const page = await doc.getPage(i);
+    const tc = await page.getTextContent();
+    // 按 y 坐标分行（PDF 里一行由多个 text item 拼成）
+    // ★ 同页 item 按 y **聚类**（容差 ±3pt），不能精确取整：
+    //   中文期刊是逐字符排版，标点的 y 和汉字的 y 差 1-2pt（实测 '：' y=148 vs 'ｈ' y=146），
+    //   精确取整会把同一行拆成两行 → 标点全部错位到别的行里。
+    const H = 1.5;   // 中文标点 y 抖 ±1pt；放大会把左右栏合并
+    const lines = new Map();          // y0(簇代表值) -> items
+    for (const it of tc.items){
+      if (!it.str || !it.str.trim()) continue;
+      const y = it.transform[5];
+      let key = null;
+      for (const k of lines.keys()) { if (Math.abs(k - y) <= H) { key = k; break; } }
+      if (key === null) { key = y; lines.set(key, []); }
+      lines.get(key).push({ s: it.str, x: it.transform[4], w: it.width || 0, h: it.height || 10 });
+    }
+    const ys = [...lines.keys()].sort((a,b)=>b-a);       // PDF y 轴向上，倒序=从上到下
+    // ★ 同一 y 上的 item **必须按 x 排序、按间隙补空格**：
+    //   pdf.js 不保证 item 顺序，也不保证相邻 item 之间留空格（实测
+    //   "1Introduction"、"attention55" 这种粘连就是这么来的）。
+    //   判据：前一个 item 的右边界 + 半个字宽 与后一个的左边界有间隙 → 补空格。
+    // ★ 双栏切分：**从行的"结束 x"高频值里找栏缝**（不猜中位线）。
+    //   实测中文期刊页宽 595：左栏 57→287、右栏 308→538，行结束 x 的高频值就是 287。
+    //   不切栏的话，同一 y 上左右栏的文字会按 x 排序缝成一行 →
+    //   核心句变成"在模 展变化的过程中…比较 式层存储的是…"这种左右交错的乱码
+    //   （实测《知识图谱》那篇，A1B1A2B2 完美交替）。
+    // 全页 x 值（算页宽用）
+    const xs = [];
+    for (const y of ys) for (const it of lines.get(y)) xs.push(it.x);
+    xs.sort((a,b)=>a-b);
+    const xmin = Math.min(...xs), xmax = Math.max(...xs);
+    const pageW = xmax - xmin;
+
+    // ★ 栏缝 = 「同一行内相邻 item 之间的大空隙」反复出现在同一个 x 上。
+    //   不能看"行尾 x" —— 左右栏的 y 只差 1~2pt，先按 y 聚簇时两栏已被合并，
+    //   每行行尾都成了整页宽 533，所谓的"左栏结束 287"就消失不见了
+    //   （实测按行尾统计：p1/p2/p4/p5/p6 全部 cut=null，只有 p3 误取到表格列边界 433）。
+    //   改统计"空隙起点"：p1/p4/p6 稳定给出 287/292（正是左栏结束点）。
+    const gapStarts = new Map();
+    for (const y of ys) {
+      const row = lines.get(y).sort((a,b) => a.x - b.x);
+      for (let k = 1; k < row.length; k++) {
+        const g = row[k].x - (row[k-1].x + (row[k-1].w || 0));
+        if (g > 15) {
+          const key = Math.round(row[k-1].x + (row[k-1].w || 0));
+          gapStarts.set(key, (gapStarts.get(key) || 0) + 1);
+        }
+      }
+    }
+    // 只认落在页宽 45%~58% 区间、且出现 ≥3 次的 —— 段首缩进（77/129）和
+    // 句中空隙（270/108）位置不固定、次数少，一条都留不下
+    const lo = xmin + pageW * 0.45, hi = xmin + pageW * 0.58;
+    const seams = [...gapStarts].filter(([x, n]) => n >= 3 && x >= lo && x <= hi)
+                                .sort((a, b) => b[1] - a[1]);
+    const cut = seams.length ? seams[0][0] : Infinity;
+
+    // ★ 双栏输出顺序：左栏全文 + 右栏全文。
+    //   逐行左右交替会让文字交错 —— 实测中文期刊左右栏的 y 本来就错开，
+    //   按 y 逐行输出得到 `左(112) 右(110) 左(95) 右(93)`，
+    //   读起来是"在模 / 展变化的过程中 / 式层存储的是…"这种拼接乱码。
+    const joinSeg = (seg) => {
+      let s = '';
+      for (let k = 0; k < seg.length; k++){
+        const cur = seg[k];
+        if (k > 0){
+          const prev = seg[k-1];
+          const gap = cur.x - (prev.x + (prev.w || 0));
+          if (gap > (cur.h || 10) * 0.25) s += ' ';
+        }
+        s += cur.s;
+      }
+      return s.replace(/\s+/g,' ').trim();
+    };
+
+    if (cut === Infinity) {
+      const rows = [];
+      for (const y of ys){ const s = joinSeg(lines.get(y).sort((a,b)=>a.x-b.x)); if (s) rows.push(s); }
+      pages.rowsOnly = pages.rowsOnly || [];
+      pages.rowsOnly.push(rows);
+      pages.push(rows);
+    } else {
+      const L = [], R = [];
+      for (const y of ys){
+        const row = lines.get(y).sort((a,b) => a.x - b.x);
+        const l = row.filter(it => it.x <= cut + 6);
+        const r = row.filter(it => it.x >  cut + 6);
+        if (l.length && r.length) { const a2 = joinSeg(l), b2 = joinSeg(r); if (a2) L.push(a2); if (b2) R.push(b2); }
+        else if (!l.length) { const s = joinSeg(r); if (s) R.push(s); }
+        else { const s = joinSeg(l); if (s) L.push(s); }
+      }
+      // ponytail: 不做"跨栏行（表格/标题）"识别 —— 判据需要看整行宽度分布，收益低；
+      //   残留表现只是术语表/图表清单里多几条，可接受。真需要时按"行宽 > 页宽*0.8"识别。
+      pages.push(L.concat(R));
+      // rows 版本：按 y 逐行（左栏、右栏各成一行），供目录抽取用
+      const yrows = [];
+      for (const y of ys){
+        const row = lines.get(y).sort((a,b) => a.x - b.x);
+        const l = row.filter(it => it.x <= cut + 6);
+        const r = row.filter(it => it.x >  cut + 6);
+        const a2 = joinSeg(l), b2 = joinSeg(r);
+        if (a2) yrows.push(a2);
+        if (b2) yrows.push(b2);
+      }
+      pages.rowsOnly = pages.rowsOnly || [];
+      pages.rowsOnly.push(yrows);
+    }
+  }
+
+  const flow = stripRepeats(pages);
+
+  // ★★ 判「坐标可信不可信」—— 不可信才 OCR
+  //
+  //   判据是**行太短**，不是行太长。这一条我第一版写反过，实测推翻：
+  //     Attention 正常论文  中位跨度 0.24，>0.6 的行 14~44%   ← 差判成"不可信"
+  //     健康中国 烂坐标     中位跨度 0.03，>0.6 的行只有 1%     ← 差判成"可信"
+  //   为什么反：正常论文正文行本来就占一栏（约页宽 60%）；
+  //   而 CNKI ReaderEx 那种烂坐标把字切成 2-3 个字的碎片，每行反而很短。
+  //
+  //   实测各文件的行跨度中位数（页宽为 1）：
+  //     正常论文   attention 0.24 / CNN 0.19 / 知识图谱 0.14
+  //     坏文件     健康中国 0.03 / 微博情感第4页 0.027
+  //   取 8% 作分界。
+  //
+  //   实现：这里拿不到每行的 x 坐标（extractText 只返回文本），
+  //   所以用「每行字数中位数」等价近似 —— 页宽固定时，字数与跨度成正比。
+  //   实测：正常中文正文一行 20~40 字；健康中国那种碎片一行 2~3 字。
+  //   判据取「中位字数 < 6」。
+  const LAYOUT_MIN_CHARS = 6;
+  let lineLens = [];
+  for (const pgRows of (pages.rowsOnly || [])) {
+    for (const line of pgRows) {
+      const s = String(line || '').trim();
+      if (s.length > 0) lineLens.push(s.length);
+    }
+  }
+  lineLens.sort((a, b) => a - b);
+  const medianLen = lineLens.length ? lineLens[Math.floor(lineLens.length / 2)] : 999;
+  const coordsUnreliable = lineLens.length >= 30 && medianLen < LAYOUT_MIN_CHARS;
+
+  const ctrlCount = (flow.match(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g) || []).length;
+  const ctrlRatio = ctrlCount / Math.max(1, flow.length + ctrlCount);
+  // ★ 第二个判据：私有区字符（U+E000–U+F8FF）。
+  //   实测《"健康中国2030"规划纲要》（国务院公报 2016）：1782 个 PUA、占 6.69%，
+  //   只有 4 种（U+E5D2/E5CF 装饰线 614+614、E5CE 栏目标记 421、E5E5 分隔符 133）。
+  //   这类 PDF 是**扫描件 + 自动生成的文字层：字有但位置错乱**，
+  //   拼行后句子被切断（"…印发了《"健康中第六篇/发展健康产业/国 2030" 规划纲要》"）。
+  //   光删 PUA 只治表面，句子还是碎的 → 必须 OCR 读图。
+  const puaCount = (flow.match(/[\uE000-\uF8FF]/g) || []).length;
+  const puaRatio = puaCount / Math.max(1, flow.length);
+  // ★ 第四个判据：一个字符都没有（纯图片扫描件）。
+  //   这是用户实测踩到的真 bug：Time 那篇《AI should be a wakeup call》是 WPS
+  //   导出的纯图 PDF，文字层长度 0。前三条判据全在算「文字坏到什么程度」，
+  //   空字符串算出来 ctrl=0 / pua=0 → 判成「文字层正常」→ 根本不去 OCR
+  //   → 最后报「这个 PDF 抽不出文字」。空 != 好，空就是最坏。
+  const emptyLayer = flow.trim().length < 20;
+  const badLayer = emptyLayer || coordsUnreliable || ctrlRatio > 0.002 || puaRatio > 0.005;
+  let ocrInfo = null;
+  // ★★ 文本层坏死 → 走 OCR 读页面图片
+  //   判据：控制字符占比 > 0.2%（正常 PDF ≈ 0，那份血脂指南 ≈ 24%）
+  //   实测（浏览器里真跑）：createWorker 12 秒（含下语言包），
+  //   密排中文 1400×900 一页 3.9 秒，数字全对。
+  //   ★ 我在这里判断错过一次：用 ESM 版报 "createWorker is not a function"，
+  //     就下结论"网页版跑不了 OCR"。实际是 ESM 的导出结构不同，
+  //     换成 UMD 版（window.Tesseract）立刻可用。已改回。
+  if (badLayer) {
+    ocrInfo = { reason: emptyLayer ? 'empty-text-layer' : 'bad-text-layer',
+                empty: emptyLayer, ctrl: ctrlCount, ratio: ctrlRatio,
+                pua: puaCount, puaRatio: puaRatio };
+    try {
+      if (!window.PL_OCR) throw new Error('ocr.js 没加载');
+      const ocr = await PL_OCR.ocrPdf(
+        doc,
+        p => tick(2 + p * 46, `扫描件，OCR 读图中 ${Math.round(p * 100)}%`),
+        st => tick(2, '下载 OCR 语言包…')
+      );
+      if (ocr && ocr.text && ocr.text.length > flow.length * 0.3) {
+        ocrInfo.used = true;
+        ocrInfo.pages = ocr.pages;
+        ocrInfo.total = ocr.total;
+        ocrInfo.capped = ocr.capped;
+        return { flow: ocr.text, rows: ocr.rows || ocr.text, ocr: ocrInfo };
+      }
+      ocrInfo.used = false;
+      ocrInfo.note = 'OCR 出的字太少，保留原文本';
+    } catch (e) {
+      ocrInfo.used = false;
+      ocrInfo.note = 'OCR 失败：' + String(e && e.message || e).slice(0, 90);
+    }
+  }
+
+  // 目录专用文本（按 y 逐行原样）：章节标题靠**行首**识别，
+  // 而 flow 里左右栏被并成了一条流，行首结构没了（实测目录 20→7 条）
+  const rowsTxt = (pages.rowsOnly || []).map(pg => pg.join('\n')).join('\n\n');
+  return { flow, rows: rowsTxt, ocr: ocrInfo };
+}
+
+/* 页眉页脚：
+   ① **纯数字行**（页码）—— 判据看位置不看重复：页码每页都不同，重复判据抓不到。
+      实测 Attention 那篇 p13 的页眉 "13"、p14 的 "14" 被拼进正文行，
+      造出 "13Input-Input Layer5" 这种假章节（目录 20→26 条）。
+   ② **多页重复行** —— 同时满足"重复"+"在页面首尾"才删（只看重复会删掉
+      arXiv running header，实测目录 37→3）*/
+// 返回 { flow, rows } ——
+//   flow = 正文流（双栏已分流，切句/核心句用它）
+//   rows = 按 y 逐行的原样（章节标题必须行首才算数，目录/图表用它）
+function stripRepeats(pages){
+  if (pages.length < 4) return pages.map(p=>p.join('\n')).join('\n\n');
+  const cnt = new Map();
+  pages.forEach(rows => {
+    const edge = [...rows.slice(0,2), ...rows.slice(-2)];
+    for (const l of edge){
+      const k = l.replace(/\d+/g,'#');
+      if (k.length > 4) cnt.set(k, (cnt.get(k)||0)+1);
+    }
+  });
+  const junk = new Set([...cnt].filter(([,n]) => n >= Math.max(3, pages.length*0.5)).map(([k])=>k));
+  return pages.map(rows => {
+    // 页码：纯数字（可带 "Page 3" / "- 3 -" 形态），且落在页面首尾 2 行内
+    rows = rows.filter((l, i) => {
+      const edge = i < 2 || i >= rows.length - 2;
+      if (!edge) return true;
+      return !/^\s*(?:page\s*)?[-–—\s]*\d{1,4}[-–—\s]*$/i.test(l);
+    });
+    // 保留 \n —— extractOutline 依赖行首结构（章节标题必须在行首）。
+    // 行间换行导致的"跨行缝合"问题在 cleanPdfNoise 里处理（去掉句末标点后的换行），
+    // 不能在这里换空格，否则目录直接归零（实测 20→0）。
+    return rows.filter(l => !junk.has(l.replace(/\d+/g,'#'))).join('\n');
+  }).join('\n\n');
+}
+
+/* ---- 渲染 ---- */
+const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let idx = 0;
+function card(icon, title, body, why){
+  idx++;
+  return `<div class="pcard"><h2><span class="n">${String(idx).padStart(2,'0')}</span>${icon} ${esc(title)}</h2>
+    ${body}${why?`<div class="why">${why}</div>`:''}</div>`;
+}
+// ul：句子列表。★ 每句下面给中文留个槽位（class="zhk"），
+// 英文论文时由 translateCoreSentences 填进去，中文论文/没模型时留空不占位。
+// 用序号 id 而不是句子内容做键 —— 同一句可能出现在两个板块，各自独立填。
+const ul = arr => `<ul>${arr.map((x,i)=>
+  typeof x==='string'
+    ? `<li>${esc(x)}<div class="zhk" id="zhk_${(window.__zhkSeq=(window.__zhkSeq||0)+1)}"></div></li>`
+    : `<li>${x}</li>`).join('')}</ul>`;
+
+async function run(file){
+  show($('prog')); show($('errbox'),false); show($('board'),false);
+  $('restart').style.display='none';
+  // 开始处理就收起首屏的介绍区（优势 4 条 + exe 下载条），别和看板挤在一起
+  ['whybetter','dlbox'].forEach(id => { const e=$(id); if(e) e.style.display='none'; });
+  idx = 0;
+
+  // ★ 先看是不是 PDF —— 用户拖错文件时（xlsx / docx / 图片）要给一句人话，
+  //   不能把 pdf.js 的英文异常甩给用户。
+  //   实测：拖 .csv 会走到 pdf.js 内部报 'Invalid PDF structure'，
+  //   而拖 .doc 甚至什么都不显示（浏览器 accept 挡住了但没解释）。
+  {
+    const nm = (file && file.name) || '(未命名)';
+    const isPdfName = /\.pdf$/i.test(nm);
+    const isPdfType = file && file.type === 'application/pdf';
+    // 有些系统给的类型是空的，所以"名字对"也算过 —— 宁可让它试一下，也别错杀
+    if (!isPdfName && !isPdfType) {
+      const ext = (nm.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
+      const hint = {
+        docx: '这是 Word 文档。请先在 Word 里「另存为 PDF」，再拖进来。',
+        doc: '这是旧版 Word。请用 Word 打开后「另存为 PDF」。',
+        xlsx: '这是 Excel 表格，不是论文。',
+        xls: '这是 Excel 表格，不是论文。',
+        pptx: '这是 PPT，请先导出成 PDF。',
+        ppt: '这是 PPT，请先导出成 PDF。',
+        caj: '这是知网的 CAJ 格式。请在 CAJViewer 里「另存为 PDF」，或用打印导出 PDF。',
+        txt: '这是纯文本。本工具要读 PDF 的版面结构，纯文本没有结构可读。',
+        png: '这是图片。本工具只接受 PDF —— 如果这是一张扫描页，请先转成 PDF。',
+        jpg: '这是图片。本工具只接受 PDF —— 如果这是一张扫描页，请先转成 PDF。',
+        jpeg: '这是图片。本工具只接受 PDF —— 如果这是一张扫描页，请先转成 PDF。',
+      }[ext] || ('这个文件不是 PDF（.') + (ext || '未知') + '）。请拖入 .pdf 文件。';
+      return fail('「' + nm + '」打不开：' + hint);
+    }
+  }
+
+  try {
+    tick(2, '读取 PDF…');
+    let raw;
+    try {
+      raw = await extractText(file, p => tick(2+p*46, `抽取文字 ${Math.round(p*100)}%`));
+    } catch (e) {
+      // ★ 加密 PDF：pdf.js 抛 PasswordException（message 是英文 "No password given"）
+      //   原来直接 fail(e.message) 把英文甩给用户，而且没地方输密码。
+      const name = String(e && e.name || '');
+      const msg = String(e && e.message || e);
+      const isPw = name === 'PasswordException' || /password/i.test(msg);
+      if (!isPw) throw e;
+      const pw = await askPassword(file.name);
+      if (!pw) return fail('已取消 —— 加密的 PDF 需要密码才能解析。');
+      tick(2, '用密码重新打开…');
+      try {
+        raw = await extractText(file, p => tick(2+p*46, `抽取文字 ${Math.round(p*100)}%`), pw);
+      } catch (e2) {
+        const m2 = String(e2 && e2.message || e2);
+        if (/password/i.test(m2)) return fail('密码不对，这份 PDF 打不开。再试一次或换一份文件。');
+        throw e2;
+      }
+    }
+    // 全角 → 半角（中文期刊 PDF 全是全角：Ｓｔａｎｆｏｒｄ ２．１．１ ％），
+    // 不归一化的话所有英文/数字正则都匹配不到
+    const text = PL.normFullwidth(raw.flow);          // 正文流（双栏已按栏分流，切句用）
+    const tRows = PL.normFullwidth(raw.rows || '');   // 按 y 逐行原样（目录/图表用）
+    // OCR 信息带出来给 renderText 用（它是 async，中间隔了几次 await，用 window 传最省事）
+    window.__plLastOcr = raw.ocr || null;
+    // ★ 抽不出字时分情况说清楚 —— 不能一句「图片型 PDF」搪塞。
+    //   不同原因对应不同的下一步动作，用户才知道该干什么。
+    if (!text || text.length < 400) {
+      return fail(diagnoseNoText(file, raw, text));
+    }
+    renderText(text, tRows);
+  } catch (e) { fail(humanError(e)); }
+}
+
+// ★ pdf.js / 浏览器的英文异常翻译成人话。
+//   用户看到的报错必须是「我能怎么办」，不是 "Invalid PDF structure"。
+function humanError(e) {
+  const raw = String(e && e.message || e || '未知错误');
+  const rules = [
+    [/Invalid PDF structure|InvalidPDF/i, '这个文件不是有效的 PDF（可能损坏，或者只是改了扩展名的其它文件）。'],
+    [/password/i, '这份 PDF 加密了，需要密码。'],
+    [/Missing PDF|Unexpected server response|404/i, 'PDF 没读到（文件可能被移动或删除），重新选一次。'],
+    [/worker|Worker/i, 'PDF 解析引擎没加载成功，检查网络后刷新页面重试。'],
+    [/out of memory|Array buffer allocation/i, '这份 PDF 太大，浏览器内存不够。换桌面版处理，或者先拆页。'],
+    [/InvalidPDFException/i, '这个文件不是有效的 PDF。'],
+  ];
+  for (const [re, msg] of rules) {
+    if (re.test(raw)) return msg;
+  }
+  // 认不出来的异常：保留原文（方便排查），但前面加一句人话
+  return '解析时出错了：' + raw.slice(0, 160);
+}
+
+// ★ 文本入口：拿到已抽好的纯文本 → 直接出看板。
+//   抽出来是为了让「PDF 抽取」和「分析与渲染」解耦：
+//   · 本地批量出看板时（web/make_board.js），算法和板块代码都复用这一份，
+//     不需要再复制一份到 Node 脚本里（历史事故：复制品分叉，看板比网页少两个板块）
+//   · 也能在浏览器控制台里直接喂文本调试，不用每次都拖 PDF
+// ★ async：函数体内有 `await import('…mermaid…')`。
+//   漏写 async 时，**module 语境下 await 是保留字 → 硬语法错误 → 浏览器拒绝解析
+//   整个 <script type="module">**，且不报错（表现为页面完全没反应）。
+//   node --check 抓不到（它按 CommonJS 解析，那里 await 是合法标识符），
+//   必须用 `node --input-type=module --check < mod.mjs` 才能发现。
+// OCR 提示条 —— 告诉用户"这份是扫描件，我读的是图"
+// 一键复制全文 —— 网页版之前只能一段段手选，用户问"都能直接复制文字了吗"，
+// 说明这个能力本来就是缺的。
+//
+// ★ 复制什么
+//   ① 纯正文（最有用）：把看板里所有 li/td 的文字按板块顺序拼起来
+//   ② 也把 origText 挂出去，供"复制原文"用（extractText 的完整结果）
+//
+// ★ 为什么用 navigator.clipboard 还要留 textarea 兜底
+//   clipboard API 只在 https 或 localhost 下可用。用户双击 index.html（file://）时
+//   它是 undefined → 必须用 document.execCommand('copy') 的老办法。
+function copyFullText() {
+  const board = document.getElementById('board');
+  if (!board) return;
+  const NL = '\n';
+  const parts = [];
+  // 标题 + 元信息
+  const h1 = board.querySelector('.h-display');
+  if (h1) parts.push(h1.innerText.trim(), '');
+  // 每个板块：标题 + 条目
+  board.querySelectorAll('.pcard').forEach(card => {
+    const h = card.querySelector('h2');
+    if (h) parts.push('## ' + h.innerText.replace(/^\d+\s*/, '').trim());
+    card.querySelectorAll('li, tr').forEach(el => {
+      const t = el.innerText.split(NL).map(x => x.trim()).filter(Boolean).join(' ');
+      if (t && t.length > 2) parts.push('- ' + t);
+    });
+    parts.push('');
+  });
+  const text = parts.join(NL).replace(/\n{3,}/g, '\n\n').trim();
+  if (!text) return;
+
+  const done = (ok) => {
+    const btn = document.getElementById('copyAllBtn');
+    if (!btn) return;
+    const old = btn.textContent;
+    btn.textContent = ok ? '✓ 已复制' : '✗ 复制失败，请手动全选';
+    setTimeout(() => { btn.textContent = old; }, 2000);
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => done(true), () => fallback(text, done));
+  } else {
+    fallback(text, done);
+  }
+}
+
+// ★ 复制失败时要给用户一条真能走通的路
+//   实测（自动化环境）：clipboard.writeText 报 NotAllowedError、execCommand 返回 false
+//   —— 都是「没有真实用户手势」。真人点按钮不会这样，但**万一**失败（老浏览器、
+//   权限被禁、file:// 某些情况），不能只说"复制失败"就完事 —— 那时用户手上什么都没有。
+//   所以失败时把全文塞进一个只读文本框并全选，用户按 Ctrl+C 就走。
+function fallback(text, done) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) { done(true); return; }
+    showCopyBox(text, done);
+  } catch (e) { showCopyBox(text, done); }
+}
+
+// 复制失败时的兜底：弹出可全选的文本框
+function showCopyBox(text, done) {
+  const old = document.getElementById('copyFallback');
+  if (old) old.remove();
+  const box = document.createElement('div');
+  box.id = 'copyFallback';
+  box.className = 'copyfallback';
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.readOnly = true;
+  box.innerHTML = '<div class="cfh">自动复制没成功（浏览器权限）。' +
+    '<b>下面文字已经全选，按 Ctrl+C 即可</b>，然后点关闭。</div>';
+  const close = document.createElement('button');
+  close.className = 'trbtn';
+  close.textContent = '关闭';
+  close.onclick = () => box.remove();
+  box.appendChild(ta);
+  box.appendChild(close);
+  document.body.appendChild(box);
+  ta.focus();
+  ta.select();
+  done(false);
+}
+
+// 复制原始抽取文字（不含板块结构，就是从头到尾的正文）
+function copyRawText() {
+  const t = window.__plRawText || '';
+  if (!t) return;
+  const done = () => {};
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(done, () => fallback(t, done));
+  } else {
+    fallback(t, done);
+  }
+}
+
+// ★ 把「重点句下面的中文槽位」填上
+//   用户原话：「重点句都被你挑出 即将呈现 翻译那些不就ok了？」
+//   —— 对。核心句/为什么做/做出了什么这三个板块里的句子，
+//      本来就是全篇最该读的，直接在原地给中文，读者不用去翻译板块的长列表里找。
+//
+// 英文从哪来：槽位的前一个兄弟节点就是那句英文（<li>英文<div class="zhk">）。
+// 这样不用另外传数据，板块怎么变都不会对不上号。
+function fillCoreTranslations() {
+  if (!window.PL_LOCAL_AI) return Promise.resolve();
+  const slots = [...document.querySelectorAll('#board .zhk')];
+  if (!slots.length) return Promise.resolve();
+
+  // 只处理英文论文：槽位所在 li 的文字里汉字占比要低
+  const todo = [];
+  slots.forEach(el => {
+    const li = el.closest('li');
+    if (!li) return;
+    const en = (li.textContent || '').replace(el.textContent || '', '').trim();
+    if (en.length < 12) return;
+    const cjk = (en.match(/[\u4e00-\u9fff]/g) || []).length;
+    if (cjk / Math.max(1, en.length) > 0.05) return;   // 已经是中文，不翻
+    todo.push({ el, en });
+  });
+  if (!todo.length) return Promise.resolve();
+
+  // 串行翻（和翻译板块抢同一个模型，并行只会更慢）
+  let seq = Promise.resolve();
+  todo.forEach(({ el, en }) => {
+    seq = seq.then(() =>
+      (PL_LOCAL_AI.translateRetry || PL_LOCAL_AI.translateOne)(en).then(zh => {
+        if (zh) {
+          el.textContent = zh;
+          el.classList.add('on');
+        }
+      }).catch(() => { /* 失败就空着，不占位也不报错——翻译板块里会标红 */ })
+    );
+  });
+  return seq;
+}
+
+// ★ 桌面版专属工具：检测到 pywebview 才显示并绑事件
+//   网页版里 window.pywebview 永远是 undefined，这块就一直隐藏。
+//   不做"看起来能用但点了没反应"的假按钮。
+// ★ 手机版专属：Capacitor 原生能力
+//   网页版里 window.Capacitor 不存在，这块永远不显示 —— 不做假按钮。
+async function bindMobileTools() {
+  const Cap = window.Capacitor;
+  const box = document.getElementById('mtools');
+  if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return;
+  if (!box) return;
+  box.style.display = '';
+
+  const log = m => { const e = document.getElementById('mtLog'); if (e) e.textContent = m; };
+  const btn = id => document.getElementById(id);
+  const P = Cap.Plugins || {};
+
+  // 当前看板的纯文本（分享和保存都用它）
+  const boardText = () => {
+    const t = window.__plRawText || '';
+    const b = document.querySelector('#board');
+    const bs = b ? b.innerText : '';
+    return (bs || t || '').trim();
+  };
+
+  // ① 分享：调系统分享面板，能发微信/QQ/邮件
+  if (btn('mShare')) btn('mShare').onclick = async () => {
+    const txt = boardText();
+    if (!txt) return log('还没有解析论文 —— 先点中间的方块选一份 PDF');
+    try {
+      await P.Share.share({
+        title: 'paperlens 解析结果',
+        text: txt.slice(0, 4000),     // 系统面板对超长文本会截断，先给前 4000 字
+        dialogTitle: '分享到',
+      });
+      log('已打开分享面板（内容 ' + txt.length + ' 字，发送前 4000 字）');
+    } catch (e) {
+      log('分享失败：' + (e.message || e));
+    }
+  };
+
+  // ② 拍照：调相机 → 拿 base64 → 直接送进 OCR/看板
+  if (btn('mCam')) btn('mCam').onclick = async () => {
+    try {
+      log('打开相机…');
+      // ★ 先显式要权限。Capacitor 的 Camera 插件会自己申请，
+      //   但用户第一次点就弹框时最容易懵（不知道为什么要相机），先说一句再弹。
+      try {
+        const st = await P.Camera.checkPermissions();
+        if (st.camera !== 'granted') {
+          log('需要相机权限，请点系统的「允许」…');
+          const req = await P.Camera.requestPermissions({ permissions: ['camera'] });
+          if (req.camera !== 'granted') {
+            return log('没给相机权限，拍照用不了。可以在手机「设置 → 应用 → paperlens → 权限」里打开。');
+          }
+        }
+      } catch (_) { /* 老版本没这接口，直接往下走 */ }
+      const photo = await P.Camera.getPhoto({
+        quality: 88,
+        resultType: 'dataUrl',
+        source: 'CAMERA',
+        direction: 'BACK',
+      });
+      log('拍到了，正在识别文字…');
+      const dataUrl = photo.dataUrl || ('data:image/jpeg;base64,' + photo.base64String);
+      window.__plCameraImage = dataUrl;
+
+      // ★ 优先走 ML Kit 原生 OCR（Google 的，离线、有中文模型、比浏览器快一个数量级）
+      //   拿不到 ML Kit 才退回 tesseract.js（慢，但能兜底）
+      try {
+        const r = await window.runNativeOcr(dataUrl);
+        log('识别完成（原生 OCR）：' + r.text.length + ' 字，看板已更新');
+        return;
+      } catch (e) {
+        log('原生 OCR 没成功（' + (e.message || e) + '），改用浏览器引擎，会慢一些…');
+      }
+      if (window.runImageOcr) {
+        await window.runImageOcr(dataUrl);
+        log('拍照识别完成（浏览器引擎），看板已更新');
+      } else {
+        log('拍照成功，但这版没有图片识别入口');
+      }
+    } catch (e) {
+      log('相机失败：' + (e.message || e) + (String(e).includes('cancelled') ? '（已取消）' : ''));
+    }
+  };
+
+  // ②b 扫描件 OCR：选一份整页是图片的 PDF，用原生引擎逐页读
+  //     网页版做不了这件事（tesseract.js 在浏览器里会卡死，实测 180 秒不返回）
+  if (btn('mOcr')) btn('mOcr').onclick = async () => {
+    const fi = document.getElementById('file');
+    if (!fi) return;
+    // 用一个临时 input 收文件，读完就扔
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'application/pdf,.pdf';
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      log('读入 ' + f.name + '，逐页转图 + 原生 OCR，慢（约 2-4 秒/页）…');
+      try {
+        const r = await window.runPdfNativeOcr(f);
+        log('完成：' + r.pages + ' 页 / ' + r.text.length + ' 字，看板已更新');
+      } catch (e) {
+        log('失败：' + (e.message || e));
+      }
+    };
+    inp.click();
+  };
+
+  // ③ 保存到手机下载目录
+  if (btn('mSave')) btn('mSave').onclick = async () => {
+    const txt = boardText();
+    if (!txt) return log('还没有解析论文');
+    try {
+      const name = 'paperlens-' + Date.now() + '.txt';
+      await P.Filesystem.writeFile({
+        path: name,
+        data: txt,
+        directory: 'DOCUMENTS',
+        encoding: 'utf8',
+      });
+      log('已保存：文档/' + name + '（' + txt.length + ' 字）');
+    } catch (e) {
+      log('保存失败：' + (e.message || e));
+    }
+  };
+
+  log('手机版就绪。分享 / 拍照 在网页版里是没有的。');
+}
+
+function bindDesktopTools() {
+  const api = (window.pywebview && window.pywebview.api) || null;
+  const box = document.getElementById('dtools');
+  if (!api || !box) return;
+  box.style.display = '';
+
+  const log = msg => {
+    const el = document.getElementById('dtLog');
+    if (el) el.textContent = msg;
+  };
+  const btn = id => document.getElementById(id);
+
+  // ① 选文件拿真实路径
+  if (btn('dtPick')) btn('dtPick').onclick = async () => {
+    log('打开选择框…');
+    const r = await api.pick_pdf();
+    if (!r.ok) return log('取消或失败：' + (r.error || ''));
+    log('已选：' + r.name + '\n大小：' + (r.size / 1048576).toFixed(1) + ' MB\n路径：' + r.path +
+        '\n\n（这个路径浏览器拿不到 —— 只有桌面版能给）');
+  };
+
+  // ② 批量转换文件夹
+  if (btn('dtBatch')) btn('dtBatch').onclick = async () => {
+    log('选择文件夹…');
+    const f = await api.pick_folder();
+    if (!f.ok) return log('取消或失败：' + (f.error || ''));
+    if (!f.pdf_count) return log('「' + f.path + '」里没有 PDF');
+    log('找到 ' + f.pdf_count + ' 个 PDF，开始转换（扫描件会慢，请等）…');
+    const r = await api.batch_extract(f.path);
+    if (!r.ok) return log('失败：' + (r.error || ''));
+    const done = r.done.map(d => '  ✓ ' + d.name + '  ' + d.chars + ' 字（' + d.method + '）').join('\n');
+    const bad = r.failed.map(d => '  ✗ ' + d.name + '  ' + d.error).join('\n');
+    log('完成 ' + r.done.length + '/' + r.total + '\n' + done + (bad ? '\n失败：\n' + bad : '') +
+        '\n\n文件已存在：' + r.out_dir);
+  };
+
+  // ③ 扫描件 OCR（走同一套 batch，单文件版本用 extract_text）
+  if (btn('dtOcr')) btn('dtOcr').onclick = async () => {
+    log('选一份扫描件 PDF…');
+    const f = await api.pick_pdf();
+    if (!f.ok) return log('取消或失败：' + (f.error || ''));
+    log('读图中，慢（约 15-20 秒/页）…');
+    const r = await api.extract_text(f.path, 12);
+    if (!r.ok) return log('失败：' + (r.error || ''));
+    log('完成：' + r.chars + ' 字，方法=' + r.method + '\n\n' + (r.text || '').slice(0, 400) + '…');
+  };
+
+  // ④ 导出看板为 txt
+  if (btn('dtSave')) btn('dtSave').onclick = async () => {
+    const t = window.__plRawText || '';
+    if (!t) return log('还没有解析过论文 —— 先拖一份 PDF 进来');
+    const r = await api.save_text(t, 'paperlens-全文.txt');
+    if (!r.ok) return log('取消或失败：' + (r.error || ''));
+    log('已保存 ' + r.chars + ' 字到：\n' + r.path);
+  };
+
+  log('桌面版就绪。上面四个按钮在网页版里是没有的。');
+}
+
+// 桌面版工具绑定：pywebview 注入 js_api 有延迟，轮询几次直到出现
+(function tryBindDesktop(){
+  let n = 0;
+  const tick = () => {
+    if (window.pywebview && window.pywebview.api) bindDesktopTools();
+    if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())
+      { bindMobileTools(); return; }
+    if (++n < 40) setTimeout(tick, 250);   // 最多等 10 秒
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(tick, 300));
+  } else {
+    setTimeout(tick, 300);
+  }
+})();
+
+function showOcrNotice(ocr) {
+  // ★ 必须插到 #board **外面**：renderText 最后会执行 $('board').innerHTML = h，
+  //   把里面的东西全冲掉（上一版就是这么消失的，debug 查了半天）。
+  const board = document.getElementById('board');
+  const el = document.createElement('div');
+  el.className = 'textwarn ok';
+  el.innerHTML =
+    '<b>✅ 这份 PDF 是扫描件，已用 OCR 读图识别</b>（读了 ' + (ocr.pages || '?') + ' 页' +
+    (ocr.capped ? '，共 ' + ocr.total + ' 页，**只读了前面这些**（全读会占满内存）' : '') + '）。' +
+    '原文的数字层是坏的（老期刊没写字符映射表，数字抽出来全是乱码），' +
+    '所以直接读了页面图片 —— 数字现在是真数字了。' +
+    '<br><span style="opacity:.72">OCR 对印刷体很准，但个别字可能认错（尤其上下标、易混字）；关键数字建议对一眼原文。</span>';
+  board.parentNode.insertBefore(el, board);
+  setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 25000);
+}
+
+// 文本层缺字提示条 —— 不弹窗、不遮挡，一条黄条挂在看板顶部
+function showTextLayerWarning(tq) {
+  const board = document.getElementById('board');
+  const pct = (tq.ratio * 100).toFixed(1);
+  const ppct = tq.puaRatio ? (tq.puaRatio * 100).toFixed(1) : '0';
+  const why = (tq.pua && tq.puaRatio > 0.005)
+    ? '（版式符号 ' + tq.pua + ' 个，占 ' + ppct + '%）'
+    : '（缺字 ' + tq.ctrl + ' 处，占 ' + pct + '%）';
+  const el = document.createElement('div');
+  el.className = 'textwarn';
+  el.innerHTML =
+    '<b>⚠️ 这份 PDF 是扫描件，文字层不可信</b>' + why + '。' +
+    '要么数字没写字符映射表，要么是排版软件生成的文字层、字有但位置错乱 —— ' +
+    '<b>下面的句子会缺数字或被切断，不是分析出错</b>。' +
+    '<br><br><b>✅ 解决办法</b>：这份文件需要 OCR 读图。' +
+    '<b>桌面版（paperlens.exe）已自动处理</b>；网页版走的是纯前端 OCR，' +
+    '若上面已出现绿色提示条说明已读图，否则说明 OCR 没跑成功（详见下方进度条）。';
+  board.parentNode.insertBefore(el, board);
+  setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 30000);
+}
+
+async function renderText(text, tRows) {
+  window.__plRawText = text;   // 「复制原文段落」按钮用
+
+  // ★ 必须在这里归一化，不能只在外层 run() 里做。
+  //   踩过的坑：run() 传进来的是已归一化的，但 __plRenderText 从外部喂的是**原始**
+  //   PDF 文本（中文期刊全是全角 Ｓｔａｎｆｏｒｄ ／ ％），未归一化时
+  //   extractOutline / extractFigures 的正则一条都匹配不到 → 返回 0 条 →
+  //   「目录」「篇幅分布」「图表清单」「收尾」「引用」五个板块静默消失
+  //   （实测中文 14 板块只剩 9 个）。两处都归一化，幂等无害。
+  text = PL.normFullwidth(text || '');
+  tRows = PL.normFullwidth(tRows || '');
+  if (!text || text.length < 400) return fail('文本太短（<400 字符），分析不了。');
+  try {
+    // ★ 文本层体检 / OCR 提示
+    //   · 走了 OCR：明确告诉用户"这份是扫描件，我已经读图了"（慢但正确）
+    //   · 没走 OCR 但文本层缺字：明确告诉用户缺数字（保持原规矩，不静默）
+    const ocr = (typeof window.__plLastOcr !== 'undefined') ? window.__plLastOcr : null;
+    if (ocr && ocr.used) {
+      showOcrNotice(ocr);
+    } else {
+      const tq = (PL.textQuality ? PL.textQuality() : null);
+      if (tq) showTextLayerWarning(tq);
+    }
+    tick(52, '切句…');        const sents = PL.splitSentences(text);
+    tick(58, '定位章节…');     const secs  = PL.locateSections(text);
+    tick(64, '提取目录…');     const outline = PL.cleanOutline(PL.extractOutline(tRows || text));
+    tick(70, 'TextRank 选核心句…'); const keys = PL.extractKeySentences(text, 4);
+    tick(78, '抽取图表…');     const figs  = PL.extractFigures(tRows || text);
+    tick(84, '统计…');         const title = PL.extractTitle(text);
+    // extractSource 可能返回 {label,url} 对象也可能返回字符串 —— 统一成字符串
+    const srcRaw = PL.extractSource(text);
+    const src = (srcRaw && typeof srcRaw === 'object')
+      ? (srcRaw.label || srcRaw.text || srcRaw.url || '') : (srcRaw || '');
+    const dtype = PL.guessType(text);
+    const authors = PL.extractAuthors(text);          // 抄 science-parse 的 Authors 字段
+    const mentions = PL.extractMentions(text);        // 抄 science-parse 的 Mentions 字段
+    const TYPE = {survey:'综述', empirical:'实证研究', theory:'理论', thesis:'学位论文', education:'教育'};
+
+    /* 篇幅分布：只在正文区间找标题（目录页里的同名条目会抢命中，实测结束语 16998 字）*/
+    const refsAt = PL.findRefsStart(text);
+    const bodyEnd = refsAt > 0 ? refsAt : text.length;
+    const dist = outline.map((it, i) => {
+      const at = text.indexOf(it.title, secs.abstract ? 0 : 0);
+      const nxt = outline[i+1] ? text.indexOf(outline[i+1].title, at+1) : -1;
+      const st = at >= 0 ? at : 0;
+      const en = nxt > st && nxt <= bodyEnd ? nxt : bodyEnd;
+      return { title: it.title, num: it.num, len: Math.max(0, en - st) };
+    }).filter(x => x.len > 200);
+    const totalLen = dist.reduce((a,b)=>a+b.len,0) || 1;
+
+    tick(92, '出看板…');
+    let h = '';
+    h += `<div class="paper-title">${esc(title)}</div>`;
+    h += `<div class="metaline">
+      <span>${TYPE[dtype]||'研究'}</span>
+      <span>${text.length.toLocaleString()} 字</span>
+      <span>${sents.length} 句</span>
+      <span>${outline.length} 章节</span>
+      <span>${figs.length} 图表</span>${src?`<span>${esc(src)}</span>`:''}</div>`;
+    if (authors.length) h += `<div class="metaline authors"><span class="lbl">作者</span>${authors.map(a=>`<span>${esc(a)}</span>`).join('')}</div>`;
+
+    // ★ 顶部「一眼看懂」—— 用已算出的判断结果拼成一段话。
+    //   为什么要有：看板有 13 个板块、4~5 万字，但用户第一眼想知道的是
+    //   "这篇在解决什么、做了什么、结果如何"。没有摘要 = 用户得自己往下翻。
+    //   拼法（全部来自已有判断，不新增算法）：
+    //     在解决什么 ← judge 的 gap 句（精确 0.912）
+    //     做了什么   ← judge 的 method 句（0.810）
+    //     结果如何   ← judge 的 effect 句（0.908）
+    //     收尾       ← 结论段的自指句
+    {
+      // ★ 抽出的句子如果"介词后直接跟动词/形容词"，说明中间的数字或词被 PDF 抽取丢了
+      //   （实测：Attention 那篇 "a BLEU score of <数字丢了> outperforming all…" —— 原文那行嵌在
+      //    Table 2 表格里，pdf.js 按栏重组文字时就漏了 "41.0"。不是算法能补救的。）
+      //   处理：这种句子不进「一眼看懂」（放上去读不通，比空着更糟），换下一句。
+      const broken = t => /\b(of|at|with|to|for|in|by|is|was|were|has|have)\s+(?=[a-z]+ing\b|[a-z]+ed\b|outperform|achiev|establish|surpass)/i.test(t)
+                        || /\d\s*\.\s*$/.test(t);
+      const pick = (kind, n) => PL.pickJudged(sents, kind, n + 3).filter(t => !broken(t)).slice(0, n);
+      const g1 = (pick('gap', 1))[0] || '';
+      const m1 = (pick('method', 1))[0] || '';
+      const e1 = (pick('effect', 1))[0] || '';
+      const c1 = PL.pickClosing(PL.splitSentences((secs.conclusion || '')), 3)
+                   .filter(t => !broken(t))[0] || '';
+      const parts = [];
+      if (g1) parts.push(['在解决什么', g1]);
+      if (m1) parts.push(['做了什么', m1]);
+      if (e1) parts.push(['结果如何', e1]);
+      if (c1 && c1 !== m1 && c1 !== e1) parts.push(['作者怎么收尾', c1]);
+      if (parts.length >= 2) {
+        h += `<div class="tldr"><div class="tldr-h">一眼看懂</div>` +
+          parts.map(([k, v]) => `<div class="tldr-r"><b>${k}</b><span>${esc(v)}</span></div>`).join('') +
+          `<div class="tldr-f">以上每句都是从原文里<b>判出来的</b>（不是概括）—— ` +
+          `句式判据经 3 万句人工标注实测，精确率 0.81~0.91。往下翻有 13 个板块和完整正文。</div></div>`;
+      }
+    }
+
+    // ★ 先选出三个专题板块要用的句子（缺口/方法/成效），**组间排他**。
+    //   为什么要提前到核心句之前：核心句是"全篇最重要的话"，本来就容易和专题板块重合
+    //   （实测 Attention 那篇 4 条核心句里有 2 条和「为什么做」「做出了什么」重复）。
+    //   提前算出来，核心句就能**避开**它们 —— 用户看到的重复会明显减少。
+    let _sj = { gap: [], method: [], effect: [] };
+    if (PL.pickJudgedExclusive) {
+      _sj = PL.pickJudgedExclusive(sents, { gap: 3, method: 2, effect: 2 });
+    } else {
+      _sj.gap = PL.pickJudged ? PL.pickJudged(sents, 'gap', 3) : [];
+      _sj.method = PL.pickJudged ? PL.pickJudged(sents, 'method', 2) : [];
+      _sj.effect = PL.pickJudged ? PL.pickJudged(sents, 'effect', 2) : [];
+    }
+
+    // 01 核心句（避开上面三组已用的句子；不够就允许回落，不能因此空掉）
+    // ★ 每句下面留一个中文槽位 —— 用户原话：
+    //   「重点句都被你挑出 即将呈现 翻译那些不就ok了？」
+    //   对。这几句本来就是全篇最该读的，读者要的是**直接读到中文**，
+    //   而不是翻到第 4 个板块去一个长列表里找它们。
+    //   英文论文时这里会由 translateCoreSentences() 逐句填中文（有就填、没有不占位）。
+    const _taken = new Set(_sj.gap.concat(_sj.method, _sj.effect));
+    let keysShown = keys.filter(s => !_taken.has(s));
+    if (keysShown.length < 2) keysShown = keys;      // 保底：宁可重复也不空
+    h += card('📌','论文最核心的几句话',
+      `<ol>${keysShown.map(s=>
+        `<li>${esc(s)}<div class="zhk" id="zhk_${(window.__zhkSeq=(window.__zhkSeq||0)+1)}"></div></li>`).join('')}</ol>`,
+      '用 TextRank 图算法选出：句子在"语义邻域"里被引用得越多越靠前，再叠四层先验（开头结尾加权、新颖句保送、实验细节降权、相似句去重）。<b>零 AI。</b>' +
+      (keys.length > keysShown.length ? ` 已避开下面专题板块用过的 <b>${keys.length - keysShown.length}</b> 句，减少重复。` : ''));
+
+    // 02 为什么做 / 做出了什么 —— ★ 由**三个经检验的判断**驱动，不再用正则捞句
+    //
+    // 旧做法（已废弃）的问题：
+    //   gap = pickSentence(引言, /然而|不足|however/) —— 只取 1 条，
+    //   且"命中 however"就把那句当问题，实测抓成 "To the best of our knowledge, however,
+    //   the Transformer is the first..." （自我宣传句，不是问题）。
+    //   板块「做出了什么」更糟：直接把核心句抄两遍，和板块 01 完全重复。
+    //
+    // 新做法：judge.js 给全篇每句打三个**二元判断**（缺口/方法/成效），
+    //   判据全部来自实测（精确率写在 judge.js 注释里），阈值 3。
+    //   板块内容 = 从判为真的句子里，按"纯度"排序取前几条。
+    const jc = PL.judgeCounts ? PL.judgeCounts(sents) : null;
+    // ★ 一次取三组 + **组间排他**（实测 bug 的修复）：
+    //   旧写法是三次独立调 pickJudged，谁都不知道别人拿了什么 →
+    //   Attention 那篇「为什么做」里混进了 "We propose a new simple network architecture"，
+    //   「做出了什么」前两条又是同样这两句，而真正的成效句（BLEU 41.0）反而没进来。
+    //   新写法按"该句得分占比最高"分配归属，同一句只进一个板块。
+    // （_sj 已在核心句之前算好，这里直接用）
+    let gapSents = _sj.gap;
+    let methSents = _sj.method;
+    let effSents = _sj.effect;
+
+    // ★ 领域判定 + 路由（用户思路："先判断论文类型，擅长的用模型、不擅长的就不用"）
+    //   实测依据（research/route_detect.py，7 样本）：医学识别 100% 正确、
+    //   把通用论文误判成 medical 的次数 = 0（这是唯一会造成伤害的错法）。
+    //   tech 与 unknown 的**处置完全相同**（都不用模型），所以判错它们零代价。
+    //   路由依据（都在官方 test 上实测过）：
+    //     医学论文：模型 method 召回 0.893 / effect F1 0.758；规则 method 召回仅 0.222
+    //               gap 相反 —— 规则精确 0.912 > 模型 0.650
+    //     → medical 时用模型补 method/effect（召回高），gap 仍用规则（精确高）
+    const dom = (PL.detectDomain ? PL.detectDomain(text) : null);
+    let routeNote = '';
+    if (dom) {
+      routeNote = `　领域判定：<b>${dom.domain === 'medical' ? '医学' : dom.domain === 'tech' ? '技术/通用' : '未明确'}</b>` +
+        `（医学信号 ${dom.medical} / 技术信号 ${dom.tech}）`;
+      if (dom.useModel && window.PL_BINARY) {
+        try {
+          const en = sents.filter(s => PL_BINARY.usableFor(s));
+          const mm = PL_BINARY.judgeAll(en);
+          const merge = (cur, add, n) => {
+            const seen = {}, out = [];
+            for (const s of (add || []).map(x => x.sent).concat(cur)) {
+              if (!seen[s]) { seen[s] = 1; out.push(s); }
+              if (out.length >= n) break;
+            }
+            return out;
+          };
+          methSents = merge(methSents, mm.method.slice(0, 3), 3);
+          effSents = merge(effSents, mm.effect.slice(0, 3), 3);
+          routeNote += ' → 该领域模型召回更高（method 0.893 vs 规则 0.222），已补用模型。';
+        } catch (e) { /* 模型没加载就只用规则 */ }
+      } else {
+        routeNote += ' → 用规则判据（该领域模型不适用）。';
+      }
+    }
+
+    if (gapSents.length) {
+      h += card('❓','为什么做（作者点出的问题）',
+        ul(gapSents),
+        `全篇 <b>${sents.length}</b> 句里，判出 <b>${jc.gap}</b> 句在讲"卡在哪"。` +
+        '判据是**实测过精确率**的句式 —— 比如 <code>however</code>（命中 4622 句，精确率 100%）、' +
+        '<code>expensive/inefficient</code>（93%）、<code>limitation</code>（83%），' +
+        '数据来自自家 3611 篇 arXiv 论文的 <b>110510 句</b>。取"纯度"最高的几条（越专讲一个问题越靠前）。');
+    }
+    if (methSents.length || effSents.length) {
+      let body = '';
+      if (methSents.length) body += `<p class="sub">做了什么（作者自述）</p>${ul(methSents)}`;
+      if (effSents.length) body += `<p class="sub">做出来什么效果</p>${ul(effSents)}`;
+      h += card('💡','做出了什么',
+        body,
+        `判出 <b>${jc.method}</b> 句在讲自己的做法、<b>${jc.effect}</b> 句在讲效果。` +
+        '「做法」的判据：<code>we propose/introduce</code>（命中 4806 句，精确率 96%）、' +
+        '<code>our method/architecture</code>（90%）。' +
+        '「效果」的判据：<code>accuracy/BLEU/F1</code> 等指标词（83%）、<code>SOTA</code>（76%）。' +
+        '<b>和板块 01 不重复</b> —— 01 是 TextRank 选的"最核心"，这里只收"作者自述贡献/结果"的句子。');
+    }
+
+    // 05c 英译中（本地模型）—— 只在英文论文上出现，**必须用户手动点**
+    //
+    // ★ 用户的要求："外文要翻成中文"、"可以用本地模型"、"下桌面端就给他搞好"。
+    // ★ 三条铁律（来自 wx-mindmap 踩过的坑，用户明确要求过）：
+    //   ① 默认不联网、不主动调任何服务
+    //   ② 检测到本地模型才亮按钮；没有就**明说没有**，绝不假装成功
+    //   ③ 失败了要显示原因，不能把英文当译文糊过去
+    {
+      const cjkN = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+      const isEnDoc = cjkN / Math.max(1, text.length) < 0.05;
+      if (isEnDoc) {
+        // ★ 翻**全文**，不是 8 句。
+        //   用户原话：「就翻了八句话 给谁看呢 我宁可一开始等的久一点
+        //             也要打开来看到的是中英文对照的图」
+        //   —— 8 句是演示品，不是能用的东西。客户拖 20 页论文进来，
+        //      要的是整篇能对照着读。
+        //   做法：把正文切成句子，按**原文顺序**全翻（不重排，读者顺序读）。
+        //   长句/不成句的碎片（表格残留、页眉）跳过：不是给人读的句子，
+        //   翻了也是噪音，而且白等时间。
+        const toTr = [];
+        const seen = Object.create(null);
+        // ★ 不该送进翻译的东西 —— 实测 20 句里 10% "失败"全是这两类，
+        //   它们本来就不是给人读的句子，翻了也是噪音，还白等 5 秒。
+        //   ① 会议名/期刊名/地址/NIPS/Proceedings 这类引用信息
+        //   ② 版面残留：arXiv 编号、页码、章节数字拼在一起的碎片
+        const SKIP_PAT = [
+          // ★ 必须要求后面紧跟冒号/数字/斜杠 —— 只写 /^(arXiv|doi)/ 会把
+          //   'Doing so requires a stack of O(n/k)…' 这种正文句也过滤掉
+          //   （以 'Do' 开头，命中了 doi）。实测踩过。
+          /^(arXiv|doi)\s*[:：\d\/.]/i,
+          /^(https?:\/\/|www\.)/i,
+          /^(©|\(c\)\s*\d{4})/i,
+          /\b(Proceedings|Conference on|Symposium|Workshop on|NIPS|NeurIPS|ICML|ACL|EMNLP|CVPR|ICCV|AAAI|IJCAI)\b/,
+          /\b(University|Institute|Department|Laboratory|Inc\.|Ltd\.|Corp\.)\b.*\b(CA|NY|MA|USA|UK|China)\b/,
+          /^[\d\s.,;:()\[\]\-–—]+$/,              // 纯数字标点
+        ];
+        const push = s => {
+          const q = (s || '').trim().replace(/\s+/g, ' ');
+          if (q.length < 12 || q.length > 400) return;    // 太短是碎片，太长模型会漏译
+          if (seen[q]) return;
+          if (!/[A-Za-z]{3,}/.test(q)) return;
+          if (!/\s/.test(q)) return;                      // 连空格都没有 = 不是句子
+          // 英文词占比太低 = 版面残留（数字/符号为主）
+          const letters = (q.match(/[A-Za-z]/g) || []).length;
+          if (letters / q.length < 0.5) return;
+          if (SKIP_PAT.some(re => re.test(q))) return;    // 会议/机构/编号
+          // 句子里夹杂换行 + 章节号（'...v7\n1\nIntroduction\n...'）→ 只取最长那段
+          seen[q] = 1;
+          toTr.push(q);
+        };
+        // ① 先把核心句和金句放最前面（读者最想看的先出结果）
+        keysShown.forEach(push);
+        _sj.gap.slice(0, 3).forEach(push);
+        _sj.method.slice(0, 3).forEach(push);
+        _sj.effect.slice(0, 3).forEach(push);
+        // ② 再补全文所有句子（按原文顺序）
+        try {
+          (PL.splitSentences(text) || []).forEach(push);
+        } catch (e) { /* 切句失败就只用上面那些 */ }
+        // ③ 去掉核心句/为什么做/做出了什么里已经在原地翻过的句子 ——
+        //    那三块由 fillCoreTranslations() 先翻，这里再翻一遍就重复了。
+        //    比对用原文（去空格归一）以避免标点差异漏过去。
+        const coreSet = Object.create(null);
+        const normKey = s => (s || '').replace(/\s+/g, ' ').trim();
+        keysShown.forEach(s => { coreSet[normKey(s)] = 1; });
+        _sj.gap.forEach(s => { coreSet[normKey(s)] = 1; });
+        _sj.method.forEach(s => { coreSet[normKey(s)] = 1; });
+        _sj.effect.forEach(s => { coreSet[normKey(s)] = 1; });
+        const list = toTr.filter(s => !coreSet[normKey(s)]);
+
+        h += card('🀄','英译中（这篇是英文，看这里）',
+          (window.__PL_DESKTOP ? '' :
+            `<div class="trstat no" style="margin-bottom:10px">` +
+            `<b>翻译要跑本机模型，网页版跑不了。</b><br>` +
+            `浏览器不允许网页去连你电脑上的模型服务（跨域限制），这是浏览器的规矩，不是我们偷懒。<br>` +
+            `<b>要翻译请用桌面版</b> —— 装一次本机模型（约 2 GB），之后断网也能翻、字不出这台电脑。<br>` +
+            `<span style="opacity:.7">下面两个下载按钮，选 Windows 桌面版。</span></div>`) +
+          `<div id="trStatus" class="trstat">正在检测本地模型…</div>` +
+          // 模型下拉框：由 bindTranslate 在检测完后填 option（只列出本机真有的模型）
+          `<div id="trModelRow" style="display:none;margin-top:8px;font-size:12.5px">` +
+          `  <label for="trModel" style="opacity:.75">用哪个模型：</label>` +
+          `  <select id="trModel" style="margin-left:6px;padding:3px 6px;border-radius:4px;` +
+          `        border:1px solid rgba(255,255,255,.28);background:rgba(0,0,0,.28);color:inherit;font:inherit">` +
+          `  </select>` +
+          `  <span id="trHint" style="margin-left:8px;opacity:.55"></span>` +
+          `</div>` +
+          `<div id="trBox" style="display:none"></div>` +
+          `<div style="margin-top:9px"><button id="trBtn" class="trbtn" disabled>开始翻译（${list.length} 句）</button>` +
+          ` <span style="font-size:11.5px;opacity:.55">全部在本机算，不上传任何内容</span></div>`,
+          '用 <b>Ollama 本地模型</b>把英文句子翻成中文 —— <b>数据不出本机</b>。' +
+          '需要先装 Ollama 并下载一个模型（推荐 <code>ollama pull qwen2.5:3b</code>，约 1.9 GB）。' +
+          '<b>没装就不显示译文，并明确告诉你没装</b> —— 不会假装翻译成功。' +
+          '<br>装了好几个模型时，可以在这里选：小模型快（3b 一句 2-3 秒），' +
+          '大模型译得更准但慢 2-2.5 倍（7b 一句 5-20 秒），占硬盘也更多。');
+        // 把要翻的句子挂到 window，供按钮回调使用
+        (window.__trList = window.__trList || Object.create(null))[list.length] = list;
+        window.__trSentences = list;
+        // ★ 自动开始翻译
+        //   用户原话：'客户看到英文 会想什么？' —— 他要的是中文结果，
+        //   不是'自己找个叫英译中的板块再点一下'。
+        //   原来默认不动，名字还写'（可选）'，等于把主力功能藏成附件。
+        //   现在：模型可用就自动开跑，用户不用做任何操作。
+        //   没装模型时 bindTranslate 会把状态写成'没装'，不会假装成功。
+        window.__autoTranslate = true;
+      }
+    }
+
+    // 03 目录（每条挂上"这节在讲什么"）
+    if (outline.length) {
+      // 用正文定位每节起点，取该节首句当摘要 —— 光有标题的目录等于没写
+      const refsAt2 = PL.findRefsStart(text);
+      const withSum = PL.outlineWithSummary(text, outline, refsAt2 > 0 ? refsAt2 : text.length);
+      const gotSum = withSum.filter(x => x.summary.length >= 20).length;
+      const totalSumSents = withSum.reduce((a, b) => a + (b.nSent || 0), 0);
+      h += card('📑','目录（每节讲什么）',
+        `<ul class="tree">${withSum.map(it=>
+          `<li class="lv${it.level}">${it.num?`<span class="num">${esc(it.num)}</span>`:''}` +
+          `<span class="ot">${esc(it.title)}</span>` +
+          (it.summary
+            ? `<div class="osum">${esc(it.summary)}</div>` +
+              (it.full && it.full.length > it.summary.length + 40
+                ? `<details class="ofull"><summary>展开看这一节（约 ${it.len} 字）</summary>` +
+                  `<div class="ofulltxt">${esc(it.full)}</div></details>`
+                : '')
+            : '') +
+          `</li>`).join('')}</ul>`,
+        `${outline.length} 条章节，其中 <b>${gotSum}</b> 条在正文里定位到，共摘出 <b>${totalSumSents}</b> 句。` +
+        '抽取走四通道：论文自带目录页 → 正文小标题 → 中文编号 → 固定标题。' +
+        '定位判据是「<b>编号 + 标题 + 换行</b>」—— 只按标题找会命中目录页和图表标题（实测 20 条只中 5 条）。' +
+        '<b>摘要取该节正文的前 2~3 句原话</b>，不是概括（纯算法做不到"读完再概括"），' +
+        '点<b>展开</b>可以看这一节的正文。');
+    }
+
+    // 04 篇幅分布
+    if (dist.length > 1){
+      dist.sort((a,b)=>b.len-a.len);
+      h += card('📊','篇幅分布（作者把力气花在哪）',
+        `<ul class="dist">${dist.map(d=>{
+          const p = Math.round(d.len/totalLen*100);
+          return `<li><div><div class="lbl">${d.num?esc(d.num)+' ':''}${esc(d.title)}<span class="bar" style="width:${p}%"></span></div></div><div class="pct">${p}%</div></li>`;
+        }).join('')}</ul>`,
+        '章节字数占比。<b>占比高 ≠ 重要</b>，但能看出作者的投入：综述会平摊，实证会压在一节上。');
+    }
+
+    // 05 术语表
+    const kws = topTerms(text, 16);
+    if (kws.length) h += card('🔖','高频术语（这篇在讲什么）',
+      `<div class="kw">${kws.map(([w,n])=>`<span>${esc(w)}<i>${n}</i></span>`).join('')}</div>`,
+      '词频统计 + 位置过滤（去掉页眉页脚和参考文献区）。<b>频次高 = 这篇的骨架词</b>。');
+
+    // 05b 英中术语对照（只对英文论文 —— 中文论文读得懂，不需要对照）
+    {
+      const isCnDoc = (text.match(/[\u4e00-\u9fff]/g) || []).length / Math.max(1, text.length) > 0.15;
+      if (!isCnDoc) {
+        const gl = PL.termGlossary(text, 24);
+        if (gl.length >= 4) {
+          h += card('🀄','英中术语对照',
+            `<div class="gloss">${gl.map(([en, cn, n]) =>
+              `<span class="gw"><b>${esc(en)}</b><i>${esc(cn)}</i><em>${n}</em></span>`).join('')}</div>`,
+            `<b>${gl.length}</b> 个专业词、按出现次数排序。` +
+            '<b>这不是整句翻译</b> —— 机器翻译是 AI 的活，本项目零 AI、零 API，' +
+            '逐词查表拼出来的句子读不成（"based solely on attention mechanisms" 会变成' +
+            '"基于 仅仅 在 注意力 机制"）。所以只做**术语对照**：' +
+            '读英文原文时卡住的是专业词，冠词介词不影响理解。' +
+            '中文论文不显示这块（本来就读得懂）。');
+        }
+      }
+    }
+
+
+    // 06 图表清单
+    if (figs.length) h += card('🖼️','图表清单', `<ul class="figs">${figs.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>`,
+      '图表能自己看，看板只负责<b>告诉你有哪些、在哪</b>，不替你描述。');
+
+    // 07 结论区
+    if (secs.conclusion && secs.conclusion.length > 60){
+      const _closingPool = PL.splitSentences(secs.conclusion);
+      // ★ 避开「做出了什么 / 为什么做」已用的句子（实测知识图谱那篇重复了 1 条：
+      //   "本文从知识图谱构建的视角…进行了全面调研和深入分析…" 同时进两个板块）。
+      //   ★ 第一次的错：我以为"先排序再传进去"就行 —— 但 pickClosing 内部会**重新打分排序**，
+      //     调用方的顺序被覆盖干净，那句照样被选中。
+      //   修：把排除集合作为第三参数传进去，在**打分阶段**扣分（扣 10 分，不硬排除 ——
+      //     结论段很短时若全排除会让板块空掉，宁可重复也不能没内容）。
+      const _usedByOthers = new Set(_sj.gap.concat(_sj.method, _sj.effect));
+      const cs = PL.pickClosing(_closingPool, 3, _usedByOthers);
+      if (cs.length) h += card('🔚','作者自己怎么收尾', ul(cs),
+        '从结论段里挑"作者在总结自己做了什么"的句子 —— 按<b>自指（本文/我们）+ 总结动词</b>打分排序。' +
+        '旧版取"结论段前 3 句"，实测中文那篇第 1 句是"互联网正从…转变成…"（背景铺垫，不是结论）。' +
+        '<b>摘要说给别人听，结论说给自己听</b> —— 两者不一致时，信结论。');
+    }
+
+    // 08 论证链（背景 → 问题 → 方法 → 结果）—— 纯位置规则，不用理解语义
+    const chain = PL.argumentChain2(sents, secs, keys);
+    if (chain.length) {
+      h += card('🧭','论证链（背景 → 问题 → 方法 → 结果）',
+        `<table><tbody>${chain.map(([k,v]) => `<tr><th style="width:74px">${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</tbody></table>`,
+        '<b>四栏各用不同判据</b>：「问题/方法/结果」用实测过的句式判断（精确率 0.912 / 0.810 / 0.908），' +
+        '「背景」没有可靠的字面特征，所以走<b>位置先验</b>（全文前 15% 的长句）。' +
+        '<b>旧版全靠位置切片</b>，实测把致谢段当成了「问题」—— 位置规则在 PDF 抽取有噪声时不可靠。' +
+        (routeNote ? `<br><span style="opacity:.72">${routeNote}</span>` : ''));
+    }
+
+    // 09 关键数字 —— 论文里最硬的信息（性能 / 规模 / 对比）
+    {
+      // 判据：必须出现**带单位的性能数字**，不认裸数字。
+      // 踩过的坑：只要求"含数字"会把年份、引用编号、图号全收进来
+      // （实测 CNN 那篇 34 条"带数字句"里大半是"20世纪50年代"、"如图3所示"）。
+      // ★ 判据要**双向**匹配 "指标↔数字"：
+      //   "BLEU score of 41.8"（指标在前）和 "28.4 BLEU"（数字在前）都是有效表述 ——
+      //   只写单向会漏掉一半（实测 Attention 那篇的 "28.4 BLEU on the WMT 2014" 就是
+      //   数字在前，单向正则判不出，整个板块空掉）。
+      const PERF = new RegExp(
+        '\\d+(?:\\.\\d+)?\\s*(?:%|％|倍|个百分点)' +                       // 74.2%
+        '|\\b(?:BLEU|F1|precision|recall|accuracy)\\b[^.]{0,24}\\d' +          // BLEU score of 41.8
+        '|\\d+(?:\\.\\d+)?\\s*(?:BLEU|F1|points?|分)\\b' +                 // 28.4 BLEU
+        '|(?:准确率|精度|召回率|F值|提升|降低|优于|提高)[^。]{0,16}\\d' +
+        '|\\d+\\s*(?:亿|万)\\s*(?:个|条|篇|张)',
+        'i');
+      const cands = sents.filter(x => {
+        if (x.length < 25 || x.length > 240) return false;
+        if (/^\s*\[\d+\]|^\s*(?:figure|table|图|表)\s*\d/i.test(x)) return false;
+        if (judge(x).junk) return false;
+        return PERF.test(x);
+      });
+      // 去重：数字组合相同的只留一次（同一条数据常在多处重复出现）
+      const seen = new Set();
+      const uniq = [];
+      // ★ 优先取**没被"做出了什么"板块用过的**句子 —— 实测那两处跨板块重复
+      //   （微博情感/知识图谱）都是"成效句恰好含数字"，被两个板块同时引用。
+      //   关键数字是补充视角，不必和成效板块重复举证同一句。
+      //   排序而非硬排除：没有新句子时仍能退回，不会让板块空掉。
+      const _effUsed = new Set(_sj.effect.concat(_sj.method));
+      const ordered = cands.slice().sort((a, b) => (_effUsed.has(a) ? 1 : 0) - (_effUsed.has(b) ? 1 : 0));
+      for (const x of ordered) {
+        const k = (x.match(/\d+(?:\.\d+)?/g) || []).join(',');
+        if (seen.has(k)) continue;
+        seen.add(k);
+        uniq.push(x);
+        if (uniq.length >= 10) break;
+      }
+      if (uniq.length) {
+        h += card('📈','关键数字',
+          `<ul class="numlist">${uniq.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`,
+          `全篇挑出 <b>${uniq.length}</b> 句带<b>性能/规模数字</b>的原话。` +
+          '判据只认**带单位的数字**（<code>74.2%</code>、<code>3.5 倍</code>、' +
+          '<code>5 亿个实体</code>、<code>BLEU 41.0</code>），不认裸数字 —— ' +
+          '否则年份（"20世纪50年代"）、引用编号、图号全会被收进来' +
+          '（实测 CNN 那篇 34 条"带数字句"里大半是这类噪声）。' +
+          '<b>数字是论文里最不用理解就能用的信息</b>：复现、对比、写综述时直接看这里。');
+      }
+    }
+
+    // 10 Mermaid 导图（比赛题干明确要求）
+    const mermaid = `graph LR
+  A["📄 论文"] --> B["📑 ${outline.length} 章节"]
+  A --> C["📌 ${keys.length} 核心句"]
+  A --> D["🖼️ ${figs.length} 图表"]
+  B --> E["📊 篇幅分布"]
+  C --> F["💡 主要结论"]
+  E --> G["🎯 投入重心"]
+  F --> G`;
+    h += card('🗺️','结构导图',
+      `<div class="mermaid">${esc(mermaid)}</div>` +
+      `<details class="msrc"><summary>复制 Mermaid 源码</summary>` +
+      `<pre class="mtext">${esc(mermaid)}</pre></details>`,
+      '比赛题干要求的 Mermaid 导图。画不出来时（断网/网络不通）源码仍在这里，' +
+      '可以复制到 Obsidian、Typora、GitHub 里渲染。');
+
+    // 14 引用图谱（抄 allenai/science-parse 的 Mentions 字段）
+    if (mentions.total > 0) {
+      const mx = mentions.top[0] ? mentions.top[0][1] : 1;
+      // 文献表里的 DOI/arXiv/URL → 编号可点开原文
+      const rlinks = PL.refLinks(text);
+      const nLink = Object.keys(rlinks).length;
+      const bars = mentions.top.map(([n, c]) => {
+        const r = rlinks[n] || {};
+        // 直链（DOI/arXiv）标 ↗；靠搜索兜底的标 🔍 —— 让读者知道点开是原文还是搜索结果
+        const no = !r.url
+          ? `<span class="refno" title="文献表里没找到这条">[${n}]</span>`
+          : (r.bySearch
+              ? `<a class="refno linked search" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" title="文献表没给 DOI，点开是这篇的搜索结果：${esc(r.title || '')}">[${n}]🔍</a>`
+              : `<a class="refno linked" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" title="${esc(r.title || '')}">[${n}]↗</a>`);
+        return `<div class="refrow">${no}` +
+          `<span class="refbar" style="width:${Math.round(c / mx * 62)}%"></span>` +
+          `<span class="refcnt">${c} 次</span>` +
+          (r.title ? `<span class="refttl">${esc(r.title)}</span>` : '') +
+          `</div>`;
+      }).join('');
+      h += card('🔗','这篇最依赖哪几篇',
+        `<p class="why">正文里一共出现 <b>${mentions.total}</b> 处文献引用，涉及 <b>${mentions.unique}</b> 个编号。` +
+        `下面是**被引用次数最多**的几个 —— 作者最依赖它们。</p>${bars}`,
+        '数正文里 <code>[12]</code> / <code>[3,5]</code> / <code>[7-9]</code> 这类标记的出现次数（范围引用会展开）。' +
+        (nLink ? `编号都可点：<b>↗</b> = 文献表里给了 DOI/arXiv，点开是原文；` +
+                `<b>🔍</b> = 文献表没给地址（中文期刊常见），点开是这篇的搜索结果。共 ${nLink} 条。` : '') +
+        '<b>注意</b>：编号是"文献表里的第几条" —— 中文学位论文/期刊的文献表排版差异大，认不出地址的就不给链接。');
+    }
+
+    $('board').innerHTML = h;
+    tick(100, '完成');
+    show($('board'));
+    $('restart').style.display='block';
+    bindTranslate();          // ★ 英译中板块的事件绑定（DOM 已插入，现在才找得到元素）
+    // ★ 核心句/为什么做/做出了什么 三个板块里的句子，原地补中文。
+    //   排在后头跑（先让看板出来），但比翻译板块的长列表更早填完 ——
+    //   读者第一眼看的正是这几句。
+    setTimeout(() => { try { fillCoreTranslations(); } catch (e) {} }, 200);
+
+    // ★ 顶部工具条：一键复制。网页版之前只有「复制 Mermaid 源码」，
+    //   想看全文只能手选 —— 用户问"都能直接复制文字了吗"就是这个缺口。
+    //   插在 #board 的第一个子节点之前，且 renderText 只在这里写一次的范围内不会冲突
+    //   （board.innerHTML 刚被赋值，这时插进去不会被冲掉）。
+    (function addCopyBar() {
+      const bar = document.createElement('div');
+      bar.className = 'copybar';
+      bar.innerHTML =
+        '<button id="copyAllBtn" class="trbtn copybtn">📋 复制全部内容</button>' +
+        ' <button id="copyRawBtn" class="trbtn copybtn">📄 复制原文段落</button>' +
+        ' <span class="copyhint">粘到 Word / Obsidian / 微信都能用</span>';
+      const boardEl = $('board');
+      boardEl.insertBefore(bar, boardEl.firstChild);
+      document.getElementById('copyAllBtn').onclick = copyFullText;
+      document.getElementById('copyRawBtn').onclick = copyRawText;
+    })();
+
+    // Mermaid 渲染（CDN，可选 —— 拿不到就显示源码，不报错）
+    try {
+      const { default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+      mermaid.initialize({startOnLoad:false, theme:'base', themeVariables:{
+        primaryColor:'#fff', primaryTextColor:'#0b1020', primaryBorderColor:'#0b1020',
+        lineColor:'#dc1414', fontFamily:'Nunito Sans, Noto Sans SC, sans-serif', fontSize:'14px'}});
+      await mermaid.run({querySelector:'.mermaid'});
+    } catch(e){ console.warn('Mermaid 没加载出来，保留源码', e); }
+
+  } catch(e){
+    console.error(e);
+    fail('解析出错：' + (e && e.message ? e.message : e));
+  }
+}
+
+/* 找一句含关键词的句子 */
+function pickSentence(seg, re, n){
+  const sents = PL.splitSentences(seg).filter(s => re.test(s));
+  // ★ 中文论文优先取**中文句**：中文期刊是"英文摘要在前、中文摘要/正文在后"，
+  //   英文那句通常更长，按长度排就会选出英文（实测《知识图谱》的"为什么做"
+  //   抓到 "However, due to the limited public disclosure..."）。
+  //   判据用**候选数比例**，不用"整池汉字占比" —— 后者会被一条超长英文句带歪：
+  //   实测池子汉字占比 0.288（差 0.012 没过 0.3），而真凶是第 [0] 条 1050 字符的
+  //   英文句一个顶十条，把均值压下去了。改成"有 ≥2 条中文候选就优先用中文"。
+  // ★ 中文优先必须发生在**任何排序之前** —— 不然英文句凭强度分（"However, due to the
+  //   limited public disclosure…" 句首 however = 强度 3）永远压过中文句（最高才 2），
+  //   中文优先等于没做（实测踩过）。
+  let pool = sents;
+  const zh = sents.filter(s => /[\u4e00-\u9fff]/.test(s));
+  if (zh.length >= 2 && zh.length >= sents.length * 0.3) pool = zh;
+  // ★ 排序三段式：**转折强度 > 位置 > 长度**。
+  //   走过的弯路（都实测过）：
+  //     ① 只按长度排 → 选到论文后段的结果句
+  //        （Attention: "Not only do individual attention heads clearly learn to…"）
+  //     ② 只按位置排 → 选到引言开头纯铺垫
+  //        （中文那篇选出"目前知识图谱技术主要用于智能语义搜索…"，那是应用介绍不是"卡在哪"）
+  //   真判据是"这句有没有在**讲困难**"：句首转折词最强（"然而，…"直接点痛点），
+  //   句中转折词次之，没有则垫底；同强度才比位置和长度。
+  const strength = (x) => {
+    if (/^\s*(?:然而|但是|但|可是|不过|遗憾的是|可惜|However|But|Unfortunately|Despite|Although|While|Yet)\b/i.test(x)) return 3;
+    if (/(不足|缺乏|尚未|难以|困难|挑战|瓶颈|局限|问题|尚未解决|有待)/.test(x)) return 2;
+    if (/(however|difficult|challeng|limitation|remain|unfortunate|hard to|struggl)/i.test(x)) return 2;
+    return 1;
+  };
+  // ★ 实验细节句降权 —— 复用 TextRank 里那张表（"GPUs/batch/learning rate/dropout/we trained"）。
+  //   实测：强度同为 2 的三条候选里，"We performed only a small number of experiments
+  //   to select the dropout…" 讲的是怎么跑实验，不是"为什么做"，却因为位置分被选中。
+  const isDetail = (x) => /\b(GPUs?|TPUs?|batch(es)?|epochs?|learning rate|dropout|hyper-?parameters?|beam size|checkpoint|warmup|we trained|we (used|use) \d+|took \d+|for \d+ (epochs|steps|hours))\b/i.test(x)
+                     || /(实验(设备|环境|平台)|显卡|显存|迭代次数|学习率|批大小|超参)/.test(x);
+  // ★ 位置用「句在切句结果里的序号」，**不用 seg.indexOf(s)** ——
+  //   splitSentences 会对句子做 trimSentenceTail 修剪，修剪后的文本在原文里
+  //   indexOf 恒为 -1（实测所有候选位置都算成 0），位置比较彻底失效 →
+  //   排序退化成"比长度"，选到最长的那句。
+  const order = new Map();
+  sents.forEach((x, i) => order.set(x, i / Math.max(1, sents.length - 1)));
+  pool.sort((a, b) => {
+    const ds = strength(b) - strength(a);
+    if (ds) return ds;                                  // ① 转折强度
+    const dd = (isDetail(a) ? 1 : 0) - (isDetail(b) ? 1 : 0);
+    if (dd) return dd;                                  // ② 非实验细节优先
+    const dp = (order.get(a) ?? 1) - (order.get(b) ?? 1);
+    if (Math.abs(dp) > 0.08) return dp;                 // ③ 位置（越靠前越优先）
+    return b.length - a.length;                         // ④ 长度
+  });
+  return pool.slice(0, n);
+}
+/* 方法指纹：抓"用 X 做 Y"的句子 */
+function methodLine(text, keys, secs){
+  const seg = secs.body || text.slice(0, 6000);
+  let cand = PL.splitSentences(seg).filter(s =>
+    /(我们|本文|该方法).{0,12}(采用|使用|构建|提出|设计)|(we|this paper|our method).{0,20}(use|employ|propose|build|design)/i.test(s));
+  // 中文论文优先中文句（同 pickSentence 的理由：英文摘要那句常更长/更靠前）
+  const bodyAll = PL.splitSentences(seg).join('');
+  if ((bodyAll.match(/[\u4e00-\u9fff]/g) || []).length / Math.max(1, bodyAll.length) > 0.3) {
+    const zh = cand.filter(x => /[\u4e00-\u9fff]/.test(x));
+    if (zh.length) cand = zh;
+  }
+  const pick = cand[0] || keys[0] || '';
+  return pick.slice(0, 300) || '（这篇的方法陈述没抽出来，请直接看正文的方法章节）';
+}
+/* 高频术语 */
+// ★ 参考：Kim & Kan 2009 (ACL) "Re-examining Automatic Keyphrase Extraction
+//   Approaches in Scientific Articles" —— keyphrase = **名词短语(NP)**；
+//   而且"有效的候选词选择带来更好性能，因为评测考量的是**候选覆盖度**"。
+//   另一条 (Tkaczyk 2018, JCDL 十款解析器横评)：ML 与规则工具精确率相当，
+//   但**召回差 3 倍**（0.66 vs 0.22）→ 该追覆盖，不是精确率。
+//
+// ★ 走过的弯路（都实测过）：
+//   ① 中文滑窗 2-6 字裸切 → "等人/例如" 词尾碎片上榜
+//   ② 滑窗 2-4 字 + 去子串 → 跨词边界碎片："识图谱构"/"谱构建技"/"建技术综"
+//   ③ 只取 2 字 + 跨句复现过滤 → 干净了，但覆盖低（"卷积"这种词取不到，
+//      因为 "卷"/"积" 各自单字不算词）
+//   ponytail: 现改用 **Intl.Segmenter（浏览器原生分词，零依赖）** + 相邻词合并，
+//   1~4 词的候选都收 → 覆盖度上去。要更准就上 jieba（+依赖，注意 Node 版体积）。
+function topTerms(text, top){
+  const CN_STOP = new Set(('的了是在和与及或对为以其之也都很会能被把从而且但若则这那有些个中上下不无'
+    + '我们你他们例如等人一种一个以及通过可以能够进行具有不是没有对于关于基于'
+    + '本文研究结果方法问题数据分析使用实现提出主要当前目前由于因此所以然而但是').split(''));
+  const CN_WORDS = new Set(['例如','等人','一种','一个','以及','通过','可以','能够','进行','具有',
+    '不是','没有','对于','关于','基于','本文','研究','结果','方法','问题','数据','分析','使用',
+    '实现','提出','主要','当前','目前','由于','因此','所以','然而','但是','什么','这个','那个',
+    '我们','他们','它们','一些','一个','这样','那样','不同','相同','相关','其中','同时','并且',
+    '可以','需要','应该','可能','已经','仍然','比如','例如','因此','从而','以上','以下',
+    // ★ 实测漏网（CNN综述/知识图谱跑出来的）：这 12 个是老版就有的泛词，
+    //   在合并短语后更容易凑够 5 次上榜，补全表
+    '采用','定义','方式','中的','一种','进行','具有','包括','通过','得到','使得','能够',
+    '情况','方面','过程','内容','部分','基本','一般','通常','直接','主要']);
+  const EN = new Set(('the and for with that this from are was were which their there have has been ' +
+    'not but can will our its also such than then thus therefore however more most much many some any ' +
+    'each other another into over under between during within without about above below out off ' +
+    'used using based shown given these those it is http https www').split(' '));
+
+  let end = PL.findRefsStart(text);
+  if (end >= text.length) end = Math.floor(text.length * 0.6);
+  const body = text.slice(0, end);
+
+  const cnt = new Map(), sents = new Map();     // 候选 -> 次数 / 出现过的句子集合
+  const bump = (w, si) => {
+    cnt.set(w, (cnt.get(w) || 0) + 1);
+    if (!sents.has(w)) sents.set(w, new Set());
+    sents.get(w).add(si);
+  };
+
+  // ── 英文：单词 + 相邻 2 词短语（"neural network" / "attention mechanism"）
+  //   ★ 实测 bug：停用词表没生效时排出来是 the(273)/of(157)/and(127)；
+  //   根因两处 —— ① 两词短语分支没做 EN 判断 ② 句子切分把 "of the" 连成 "ofthe"
+  //   修：分词用**同一套正则**，全程先过滤停用词，再拼短语。
+  const enSents = body.toLowerCase().split(/[.!?;\n]+/);
+  enSents.forEach((sn, si) => {
+    // 先按词切，再就地过滤停用词/短词 —— 拼短语时上下文已干净
+    const raw = sn.match(/[a-z][a-z-]{2,}/g) || [];
+    const ws = raw.filter(w => !EN.has(w) && w.length >= 4 && !/^\d/.test(w));
+    for (let k = 0; k < ws.length; k++) {
+      bump(ws[k], si);
+      if (k + 1 < ws.length && (ws[k].length + ws[k + 1].length) <= 24) {
+        bump(ws[k] + ' ' + ws[k + 1], si);
+      }
+    }
+  });
+
+  // ── 中文：Intl.Segmenter 原生分词 → 相邻 1~3 词合并成候选
+  //   ★ 实测 bug：英文论文里跑中文分支 → 撞出 the(273)/of(157)/and(127)。
+  //   根因：① 句子按中文标点切，英文论文没有中文标点 → 整篇成了**一句**
+  //         ② zh-CN 分词器对英文文本照样切词，`the` 就进来了
+  //   修：先判文档语言，英文文档**不跑**中文分支（也不建 Segmenter）。
+  const cjkRatio = (body.match(/[\u4e00-\u9fff]/g) || []).length / Math.max(1, body.length);
+  const isCnDoc = cjkRatio > 0.08;
+  let seg = null;
+  if (isCnDoc) {
+    const sentsAll = body.split(/[。！？；\n]+/);
+    try { seg = new Intl.Segmenter('zh-CN', { granularity: 'word' }); } catch (e) { /* 老浏览器 */ }
+    sentsAll.forEach((sn, si) => {
+      let toks;
+      if (seg) {
+        toks = [...seg.segment(sn)].filter(x => x.isWordLike).map(x => x.segment);
+      } else {
+        toks = sn.match(/[\u4e00-\u9fff]{2}/g) || [];     // 兜底：退回 2 字滑窗
+      }
+      for (let k = 0; k < toks.length; k++) {
+        const w = toks[k];
+        if (w.length < 2 || CN_WORDS.has(w)) continue;
+        // ★ 纯数字/数字串不能当术语 —— 实测 CNN综述 排出来 '11(29次)' 上榜，
+        //   那是正文里到处都有的引用编号和数字（'CNN11' '11 层'），不是术语。
+        if (/^[\d０-９.,，]+$/.test(w)) continue;
+        if (CN_STOP.has(w[0]) && CN_STOP.has(w[1])) continue;
+        bump(w, si);
+        // 相邻合并：1~3 词（覆盖"知识图谱"/"卷积神经网络"/"基于情感词典"）
+        let acc = w;
+        for (let m = 1; m <= 2 && k + m < toks.length; m++) {
+          const nx = toks[k + m];
+          if (nx.length < 2 || CN_WORDS.has(nx)) break;
+          // ★ 合并也要挡纯数字 —— '11' 是单个 token 被上面挡了，但它是
+          //   从**合并路径**进来的（前一个词 + 数字），所以这里也得挡一次。
+          if (/^[\d０-９.,，]+$/.test(nx)) break;
+          acc += nx;
+          if (acc.length <= 8) bump(acc, si);
+        }
+      }
+    });
+  }
+
+  const out = [];
+  for (const [w, n] of cnt) {
+    if (n < 5) continue;
+    // ★ 总闸：纯数字/标点组成的候选一律不要。
+    //   实测 CNN综述 排出 '11(29次)'、Attention 里冒出 '2014' 这类。
+    //   这一步是"不论从哪条路径进来都拦住"的最后一道。
+    if (/^[\d０-９.,，%\-–—\s]+$/.test(w)) continue;
+    const cjk = /[\u4e00-\u9fff]/.test(w);
+    // 中文候选必须在 ≥3 个不同句子里出现过 —— 一票否决偶然拼接
+    if (cjk && (sents.get(w) ? sents.get(w).size : 0) < 3) continue;
+    out.push([w, n]);
+  }
+  // 去子串：长候选出现次数 ≥ 其子串的 80% 时，只留长的（"卷积神经网络" 优于 "卷积"）
+  const sorted = out.sort((a, b) => b[1] - a[1]);
+  const keep = [];
+  for (const [w, n] of sorted) {
+    if (keep.some(([kw, kn]) => kw.includes(w) && kn >= n * 0.8)) continue;
+    keep.push([w, n]);
+    if (keep.length >= (top || 16) * 3) break;
+  }
+  return keep.slice(0, top);
+}
+
+/* ---- 事件 ---- */
+const dz = $('drop'), fi = $('file');
+dz.addEventListener('click', ()=>fi.click());
+fi.addEventListener('change', e => { if (e.target.files[0]) run(e.target.files[0]); });
+['dragenter','dragover'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.add('over'); }));
+['dragleave','drop'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.remove('over'); }));
+dz.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) run(f); });
+$('restart').addEventListener('click', () => {
+  show($('board'),false); $('restart').style.display='none'; show($('drop')); show($('prog'),false); idx=0;
+  // 回到首屏：把介绍区和下载条放回来
+  ['whybetter','dlbox'].forEach(id => { const e=$(id); if(e) e.style.display=''; });
+});
+window.PL_RUN = run;               // 拖 PDF 入口（自动化测试用）
+
+// ★ 手机拍照入口：图片 → OCR 文字 → 走和 PDF 一样的看板流程
+//   不走 run(file)，因为没有文字层这个概念，直接给现成 text。
+// ★ 安卓原生 OCR（Google ML Kit）—— 这是手机上跑得动扫描件的关键
+//   tesseract.js 是 WASM，在浏览器里处理大图会卡死（实测 180 秒不返回）。
+//   ML Kit 是原生库，同样一张图 1-3 秒，而且自带中文模型。
+//   流程：base64 → 写进临时文件（ML Kit 只吃本地路径）→ 识别 → 直接出看板
+// ★ 扫描件 PDF → 原生 OCR（手机上替代桌面版的 RapidOCR）
+//   pdf.js 把每页画成图 → base64 → ML Kit 识别 → 拼起来出看板。
+//   桌面版用 Python 的 RapidOCR 干这活（4 页 101 秒）；这里用原生库，
+//   同样 4 页约 8-16 秒。差别是手机 CPU 弱，但 ML Kit 是编译好的 native 代码。
+window.runPdfNativeOcr = async function (file) {
+  const Cap = window.Capacitor;
+  if (!Cap || !Cap.Plugins || !Cap.Plugins.TextRecognition) throw new Error('没有原生 OCR 插件');
+  const P = Cap.Plugins;
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const MAXP = 12;                                  // 手机上别一次跑太多
+  const n = Math.min(pdf.numPages, MAXP);
+  const parts = [];
+
+  for (let i = 1; i <= n; i++) {
+    const page = await pdf.getPage(i);
+    // 2.0 ≈ 144dpi，够 ML Kit 认字，又不至于太慢
+    const vp = page.getViewport({ scale: 2.0 });
+    const cv = document.createElement('canvas');
+    cv.width = Math.floor(vp.width);
+    cv.height = Math.floor(vp.height);
+    await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+
+    const b64 = cv.toDataURL('image/jpeg', 0.9).replace(/^data:[^,]+,/, '');
+    const fname = 'pl-p' + i + '-' + Date.now() + '.jpg';
+    const w = await P.Filesystem.writeFile({
+      path: fname, data: b64, directory: 'CACHE', encoding: null,
+    });
+    const p = (w.uri || '').replace('capacitor://localhost/_capacitor_file_', '').replace('file://', '');
+
+    // 双模型取优（英文论文用 CHINESE 模型只会出零散字母，见 __mlkitBest 的注释）
+    const res = await window.__mlkitBest(p);
+    if (res && res.text) parts.push(res.text.trim());
+    await P.Filesystem.deleteFile({ path: fname, directory: 'CACHE' }).catch(() => {});
+  }
+
+  const text = PL.normFullwidth(parts.join('\n\n'));
+  if (text.length < 400) {
+    throw new Error('只认出 ' + text.length + ' 字（' + n + ' 页）—— 这份可能不是扫描件（有文字层的直接拖进来更快），或者图片太糊');
+  }
+
+  show($('prog'), false); show($('errbox'), false);
+  ['whybetter','dlbox','dtools','mtools'].forEach(id => { const e=$(id); if(e) e.style.display='none'; });
+  show($('board'));
+  $('restart').style.display = '';
+  idx = 0;
+  await renderText(text);
+  return { text, pages: n };
+};
+
+// ★ ML Kit 的两个模型必须都试 —— 这是之前英文论文识别失败的原因
+//   CHINESE 模型的训练数据是汉字，认英文字母很弱（只出零散字母）；
+//   LATIN 模型完全不认中文。单靠 try/catch 退回没用：
+//   CHINESE 认英文不报错，只是认出一堆垃圾，所以 catch 根本不会触发。
+//   做法：两个都跑，取字更多的那个。多花 1-2 秒，换不掉字。
+window.__mlkitBest = async function (path) {
+  const P = window.Capacitor.Plugins;
+  const run = async (script) => {
+    try {
+      const r = await P.TextRecognition.processImage({ path, script });
+      return { script, text: (r && r.text) || '', raw: r };
+    } catch (e) {
+      return { script, text: '', err: String(e.message || e) };
+    }
+  };
+  const [zh, en] = await Promise.all([run('CHINESE'), run('LATIN')]);
+  // 中文优先（中文模型也能认数字和标点），英文明显更多时才用英文
+  const best = (en.text.length > zh.text.length * 1.5) ? en : zh;
+  if (!best.text) throw new Error('两个模型都没认出字（' + (zh.err || en.err || '图片可能太糊') + '）');
+  return { text: best.text, blocks: best.raw && best.raw.blocks, script: best.script };
+};
+
+window.runNativeOcr = async function (dataUrl) {
+  const Cap = window.Capacitor;
+  if (!Cap || !Cap.Plugins || !Cap.Plugins.TextRecognition) {
+    throw new Error('没有原生 OCR 插件');
+  }
+  const P = Cap.Plugins;
+  const ext = (dataUrl.match(/^data:image\/(\w+)/) || [, 'jpeg'])[1];
+  const fname = 'pl-ocr-' + Date.now() + '.' + ext;
+
+  // 写临时文件（Cache 目录，系统会自己清）
+  const b64 = dataUrl.replace(/^data:[^,]+,/, '');
+  const w = await P.Filesystem.writeFile({
+    path: fname, data: b64, directory: 'CACHE', encoding: null,
+  });
+  const uri = w.uri || '';
+  // ML Kit 要的是纯文件路径，capacitor://localhost/_capacitor_file_ 前缀要去掉
+  const p = uri.replace('capacitor://localhost/_capacitor_file_', '')
+               .replace('file://', '');
+
+  const res = await window.__mlkitBest(p);
+  await P.Filesystem.deleteFile({ path: fname, directory: 'CACHE' }).catch(() => {});
+
+  const text = (res && res.text || '').trim();
+  if (text.length < 40) {
+    throw new Error('只认出 ' + text.length + ' 字 —— 对着文字重拍，光线足一点');
+  }
+
+  // 和 PDF 一样的三步切视图
+  show($('prog'), false); show($('errbox'), false);
+  ['whybetter','dlbox','dtools','mtools'].forEach(id => { const e=$(id); if(e) e.style.display='none'; });
+  show($('board'));
+  $('restart').style.display = '';
+  idx = 0;
+  await renderText(text);
+  return { text, lines: (res.blocks || []).length };
+};
+
+window.runImageOcr = async function (dataUrl) {
+  if (!window.PL_OCR || !window.PL_OCR.ocrImage) throw new Error('OCR 引擎没加载');
+  const r = await window.PL_OCR.ocrImage(dataUrl);
+  if (!r.text || r.text.length < 40) {
+    throw new Error('认不出文字（' + (r.text || '').length + ' 字）—— 对着文字重拍一次，光线足一点');
+  }
+  window.__plRawText = r.text;
+  // 和 run() 一样的三步切视图：藏首屏、显示看板、给个"重新开始"按钮
+  show($('prog'), false); show($('errbox'), false);
+  ['whybetter','dlbox','dtools','mtools'].forEach(id => { const e=$(id); if(e) e.style.display='none'; });
+  show($('board'));
+  $('restart').style.display = '';
+  idx = 0;
+  await renderText(r.text);    // 直接渲染看板，跳过 PDF 解析
+  return r;
+};
+// ★ 英译中板块的事件绑定（必须在 DOM 插入之后）
+//   三条铁律：检测不到就明说、失败显示原因、绝不把英文当译文。
+function bindTranslate() {
+
+  const box = document.getElementById('trBox');
+  const st = document.getElementById('trStatus');
+  const btn = document.getElementById('trBtn');
+  if (!box || !st || !btn) return;          // 不是英文论文，没有这个板块
+  const list = window.__trSentences || [];
+  if (!window.PL_LOCAL_AI) {
+    st.className = 'trstat no';
+    st.textContent = '本地 AI 模块没加载（local_ai.js 缺失），无法翻译。';
+    return;
+  }
+  PL_LOCAL_AI.detect().then(s => {
+    if (!s.online) {
+      st.className = 'trstat no';
+
+      // ★ 部署到公网（https）时，翻译在这台机器上永远装不成 —— 说清原因，并指路桌面版。
+      //   两个不同的拦截：
+      //     https 页面 → 请求 http://127.0.0.1:11434 被浏览器当混合内容拦掉
+      //     file:// 打开 → Ollama 对 Origin: null 返 403
+      //   不提这个的话，用户会以为是自己的电脑坏了，反复装 Ollama 也没用。
+      const https = location.protocol === 'https:';
+      if (https) {
+        st.innerHTML =
+          '<b>网页版翻不了英文 —— 这是浏览器的安全限制，不是你电脑的问题</b><br>' +
+          '本站是 <code>https://</code>，浏览器不允许网页去连你本机的翻译服务' +
+          '（<code>http://127.0.0.1</code>），装了 Ollama 也会被拦。<br>' +
+          '<b>想要英中对照？</b>用桌面版或手机版，那里不受这个限制：' +
+          '<a href="https://github.com/Az0R119/paperlens/releases/latest/download/paperlens-desktop-v1.0.exe" ' +
+          'target="_blank" rel="noopener" class="tr-dl">⬇ Windows 桌面版（109 MB）</a> ' +
+          '<a href="https://github.com/Az0R119/paperlens/releases/latest/download/paperlens-android-v1.0.apk" ' +
+          'target="_blank" rel="noopener" class="tr-dl">⬇ 安卓手机版（50 MB）</a>' +
+          '<br><span class="tr-note">其他 13 个板块都正常，翻译不影响它们。</span>';
+        return;
+      }
+
+      // ★ 没有可用翻译时怎么说 —— 只留本机模型这条路。
+      //   （云端翻译已按用户要求去掉：外部服务要 key、要花钱、还 CORS 拦，不如本机稳）
+      st.innerHTML = '<b>' + esc(PL_LOCAL_AI.statusText()) + '</b><br>' +
+        '<div style="margin-top:8px;line-height:1.9">' +
+        (window.__PL_DESKTOP
+          ? '<b>点这里装本机模型（免费、数据不出本机）：</b><br>' +
+            '<a href="#" id="trAutoOllama" class="tr-cfg">一键安装 Ollama + 模型</a>' +
+            '（约 2 GB，要等几分钟）'
+          : '<b>翻译要用本机模型，需要先装 Ollama：</b><br>' +
+            '<a href="https://ollama.com/download/windows" target="_blank" rel="noopener" class="tr-cfg">' +
+            '下载 Ollama</a>，装完跑 <code>ollama pull qwen2.5:3b</code>，再刷新本页') +
+        '<br><span style="opacity:.6">其他板块都正常，翻译只影响第 2 个板块。</span>' +
+        '</div>';
+      // 一键装：调用桌面版的 install_ollama（有 Python，能真装东西）
+      setTimeout(function () {
+        const btn = document.getElementById('trAutoOllama');
+        if (!btn) return;
+        btn.onclick = async function (e) {
+          e.preventDefault();
+          const api = window.pywebview && window.pywebview.api;
+          if (!api || !api.install_ollama) return;
+          st.className = 'trstat ok';
+          st.textContent = '开始安装，可能要 5-10 分钟，别关窗口…';
+          const r = await api.install_ollama('qwen2.5:3b');
+          if (r && r.ok) {
+            st.className = 'trstat ok';
+            st.innerHTML = '<b>装好了</b>（' + (r.step || '') + '）<br>' +
+              '<pre style="font-size:11px;max-height:160px;overflow:auto;opacity:.8">' +
+              (r.log || '').replace(/</g, '&lt;') + '</pre>' +
+              '<b>刷新本页就能用翻译了。</b>';
+          } else {
+            st.className = 'trstat no';
+            st.innerHTML = '<b>装失败：' + ((r && r.error) || '未知原因') + '</b>' +
+              '<pre style="font-size:11px;max-height:160px;overflow:auto;opacity:.8">' +
+              ((r && r.log) || '').replace(/</g, '&lt;') + '</pre>';
+          }
+        };
+      }, 30);
+      return;
+    }
+    if (!s.model) {
+      st.className = 'trstat no';
+      st.innerHTML = '<b>' + esc(PL_LOCAL_AI.statusText()) + '</b><br>' +
+        '已有模型：' + esc(s.models.join(', ') || '（无）') +
+        '<br>请跑 <code>ollama pull qwen2.5:3b</code> 后刷新。';
+      return;
+    }
+    st.className = 'trstat ok';
+    st.innerHTML = '✓ ' + esc(PL_LOCAL_AI.statusText()) +
+      '<br><span style="opacity:.6">影不影响速度：模型在内存里跑，第一次会慢些</span>';
+
+    // ★ 模型下拉框：只列本机真有的（来自 /api/tags），带体积，默认选中的是 detect() 挑的
+    //   为什么要给用户选：实测同一句 3b 2-3 秒 / 7b 5-20 秒，
+    //   但 7b 中文更准（"成分解析" vs 3b 误译成"依存句法分析"）。
+    //   哪个更值，取决于他机器多快、愿不愿意等 —— 这是他的决定。
+    const row = document.getElementById('trModelRow');
+    const sel = document.getElementById('trModel');
+    const hint = document.getElementById('trHint');
+    const gb = n => (n / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+    if (row && sel && s.models && s.models.length) {
+      sel.innerHTML = s.models.map(n =>
+        `<option value="${esc(n)}"${n === s.model ? ' selected' : ''}>` +
+        `${esc(n)}（${s.sizes && s.sizes[n] ? gb(s.sizes[n]) : '大小未知'}）</option>`).join('');
+      row.style.display = 'block';
+      const upd = () => {
+        const name = sel.value;
+        const size = s.sizes && s.sizes[name] ? s.sizes[name] / 1024 / 1024 / 1024 : 0;
+        hint.textContent = size >= 3.5
+          ? '体积大，翻译更准但每句要等 5-20 秒'
+          : (size > 0 ? '体积小，快（每句 2-3 秒）' : '');
+      };
+      upd();
+      sel.onchange = () => {
+        if (PL_LOCAL_AI.setModel(sel.value)) {
+          upd();
+          st.innerHTML = '✓ ' + esc(PL_LOCAL_AI.statusText()) +
+            '<br><span style="opacity:.6">已切换模型，点下面按钮开始翻译</span>';
+          // 换模型后旧译文作废，避免用户以为新模型也这个结果
+          box.style.display = 'none';
+          box.innerHTML = '';
+          btn.textContent = '开始翻译（' + list.length + ' 句）';
+          btn.disabled = false;
+        }
+      };
+    }
+
+    btn.disabled = false;
+    btn.onclick = () => {
+      btn.disabled = true;
+      btn.textContent = '翻译中… 0/' + list.length;
+      box.style.display = 'block';
+      box.innerHTML = list.map((s, i) =>
+        `<div class="trrow"><div class="en">${esc(s)}</div>` +
+        `<div class="zh" id="tr${i}">…</div></div>`).join('');
+
+      // ★ 逐句边译边填，不攒到最后一次性刷。
+      //   原来用 translateMany().then() 一次性写入 —— 全文几百句要等半小时，
+      //   期间框里全是「…」，用户以为坏了。用户原话：
+      //   「我宁可一开始等的久一点 也要打开来看到的是中英文对照的图」。
+      //   现在每译完一句就写进去，第一句约 2-3 秒就出现，可以边滚边读。
+      let done = 0, ok = 0;
+      const total = list.length;
+      const started = Date.now();
+      const speedText = () => {
+        const sec = (Date.now() - started) / 1000;
+        if (done < 1) return '';
+        const per = sec / done;
+        const left = Math.max(0, Math.round(per * (total - done)));
+        const mm = Math.floor(left / 60), ss = left % 60;
+        return ' · 约剩 ' + (mm ? mm + ' 分 ' : '') + ss + ' 秒';
+      };
+
+      // 用 translateRetry：模型偶尔只用英文回答，再问一次通常就有了（实测 5%）
+      const one = i => (PL_LOCAL_AI.translateRetry || PL_LOCAL_AI.translateOne)(list[i]).then(
+        zh => {
+          const el = document.getElementById('tr' + i);
+          if (el) {
+            if (zh) { el.textContent = zh; ok++; }
+            else el.innerHTML = '<span style="color:var(--red)">（这句翻译失败）</span>';
+          }
+        },
+        () => {
+          const el = document.getElementById('tr' + i);
+          if (el) el.innerHTML = '<span style="color:var(--red)">（这句翻译失败）</span>';
+        }
+      ).then(() => {
+        done++;
+        btn.textContent = '翻译中… ' + done + '/' + total + speedText();
+      });
+
+      // 串行：一句接一句（并行会把 CPU 打满，3b 模型反而更慢）
+      let seq = Promise.resolve();
+      for (let i = 0; i < total; i++) seq = seq.then(() => one(i));
+      seq.then(() => {
+        btn.textContent = ok === total ? '✓ 全部译完（' + total + ' 句）'
+                                       : '完成 ' + ok + '/' + total + '（可重试）';
+        btn.disabled = ok === total;
+      });
+    };
+
+    // ★ 自动开始翻译
+    //   用户原话：'客户看到英文 会想什么？' —— 他要的是中文，不是自己找按钮。
+    //   模型可用时（走到这里说明已经可用）直接替他点一下，
+    //   打开看板就有中文，不用做任何操作。
+    //   失败路径不受影响：translateMany 内部出错会显示"这句翻译失败"，不会假装成功。
+    if (window.__autoTranslate) {
+      window.__autoTranslate = false;     // 只自动一次，之后换文档由 renderText 重新设
+      st.innerHTML = '✓ ' + esc(PL_LOCAL_AI.statusText()) +
+        '<br><span style="opacity:.6">已自动开始翻译，稍等几秒</span>';
+      setTimeout(() => btn.click(), 60);   // 让 DOM 先画出来，再开跑
+    }
+  });
+}
+
+// ★ 把译文填进 zhk 槽位（云端翻译用）
+//   本地模型那条路是边译边填，云端是一次拿回整批，所以统一在这里填。
+//   槽位生成顺序 = 句子在板块里出现的顺序，和 __trSentences 一一对应。
+window.__fillTranslations = function (out) {
+  const slots = document.querySelectorAll('.zhk');
+  out.forEach((zh, i) => {
+    if (!slots[i]) return;
+    if (zh && zh.trim()) {
+      slots[i].textContent = zh.trim();
+      slots[i].classList.add('filled');
+    } else {
+      slots[i].textContent = '（这句翻译失败）';
+      slots[i].classList.add('failed');
+    }
+  });
+};
+
+window.__plRenderText = renderText;  // 纯文本入口：本地批量出看板时复用同一份板块代码
+</script>
+</body>
+</html>

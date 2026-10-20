@@ -1,0 +1,106 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# paperlens 产物（看板是给用户看的产物，不进仓库）
+*_看板.html
+*_看板.md
+*_看板.json
+# 早期命名不带"_看板"的产物也一并排除（attention.md / attention.json 等）
+samples/*.md
+samples/*.json
+# run.bat 第3步的分析缓存（第4步复用，避免重复调 AI）
+*.分析缓存.json
+
+# 用户私有：凭证配置绝不能进仓库
+.wxmindmap_config.json
+config.local.json
+.env
+
+# 桌面整理的回滚日志（不属于本项目）
+_desktop_move_log.json
+_desktop_plan.json
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 静态站产物（由 research/build_site.py 生成）
+/site/
+/paperlens-网站.zip
+
+# 打包环境与产物
+/.buildenv/
+/build/
+/dist/
+
+# web/ 本地调试产物（不进版本库）
+web/_lib/
+web/_text.json
+web/_cn_check.js
+web/cn.pdf
+web/cnn.pdf
+web/*_items.json
+web/test.pdf
+
+# 第三方研究素材（从网上下的标注语料 / 参考实现，只做研究，不进产品）
+research/fws_corpus.csv
+research/fws_recog_predict.csv
+research/fws_typeclassify.csv
+research/p3r_reference.css
+web/attention.pdf
+web/_text_cn.json
+web/_text_en.json
+
+# 研究素材（第三方数据 + 训练中间产物）：不进仓库、不进交付包
+research/pubmed_rct/
+research/fws_*.csv
+research/p3r_reference.css
+research/*.jsonl
+research/_*.json
+research/_*.log
+research/lexicon.json
+research/role_model.json
+web/_t*.json
+web/_make_board.js
+web/_board_tpl.html
+web/_ping.json
+research/lexicon_local.json
+research/_lex_js*.json
+research/_prior_full.json
+research/_eval.log
+web/_text_cnn.json
+web/_text_wb.json
+web/_text_lx.json
+web/_*_items.json
+web/_num_check.js
+
+# 提交包产物（可随时用 make_submission.py 重新生成）
+_submission/
+paperlens_提交包.zip
+
+# 打包产物（大文件，走 GitHub Releases 分发，不进 git）
+*.exe
+pdf2txt-v1.0*
+paperlens-桌面版*
+
+# 构建产物：上传到 GitHub Release，不进仓库（单文件 >100MB 会被拒）
+paperlens-desktop-v1.0.exe
+paperlens-android-v1.0.apk
+paperlens-exe.zip
+pdf2txt-v1.0*
+*.part00
+*.part01
+*.part02
+
+# 打包与构建目录
+.buildenv/
+build/
+dist/
+D:/pl_gui/
